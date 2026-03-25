@@ -11,6 +11,10 @@ import (
 	srt "github.com/datarhei/gosrt"
 )
 
+// subscriber holds a single subscriber connection and its packet channel.
+// closeOnce ensures the channel is closed exactly once regardless of which
+// path (writePump exit or publisher disconnect) initiates the close.
+
 // Stream manages a single named SRT relay: one publisher, N subscribers.
 // Each subscriber gets a buffered ring-buffer channel; slow consumers have
 // their oldest packets overwritten rather than being disconnected.
@@ -34,9 +38,14 @@ type Stream struct {
 }
 
 type subscriber struct {
-	id   uint32
-	conn srt.Conn
-	ch   chan []byte
+	id        uint32
+	conn      srt.Conn
+	ch        chan []byte
+	closeOnce sync.Once
+}
+
+func (sub *subscriber) closeCh() {
+	sub.closeOnce.Do(func() { close(sub.ch) })
 }
 
 func newStream(name string, bufSize int) *Stream {
@@ -89,11 +98,11 @@ func (s *Stream) RemoveSubscriber(id uint32) {
 	sub, ok := s.subscribers[id]
 	if ok {
 		delete(s.subscribers, id)
-		close(sub.ch)
 	}
 	s.mu.Unlock()
 	if ok {
 		s.subscriberCount.Add(-1)
+		sub.closeCh()
 		sub.conn.Close()
 	}
 }
@@ -114,7 +123,7 @@ func (s *Stream) Close() {
 		pub.Close()
 	}
 	for _, sub := range subs {
-		close(sub.ch)
+		sub.closeCh()
 		sub.conn.Close()
 	}
 	s.subscriberCount.Store(0)
@@ -148,11 +157,27 @@ func (s *Stream) Stats() StreamStats {
 // It uses a sync.Pool to reuse packet buffers and a ring-buffer strategy for
 // slow consumers: if a subscriber's channel is full, the oldest packet is dropped
 // and the new one is enqueued (rather than disconnecting the subscriber).
+// When the publisher disconnects, all subscriber connections are closed so that
+// subscriber read loops receive EOF rather than blocking indefinitely.
 func (s *Stream) relayLoop(ctx context.Context) {
 	defer func() {
 		s.mu.Lock()
 		s.publisher = nil
+		// Snapshot subscribers; leave them in the map so RemoveSubscriber
+		// can still clean up (the once.Do prevents double-close).
+		subs := make([]*subscriber, 0, len(s.subscribers))
+		for _, sub := range s.subscribers {
+			subs = append(subs, sub)
+		}
 		s.mu.Unlock()
+
+		// Close each subscriber's connection and channel. writePump goroutines
+		// will unblock (either Write fails or channel read sees ok=false),
+		// call RemoveSubscriber, and exit cleanly.
+		for _, sub := range subs {
+			sub.conn.Close() // unblocks writePump if blocked in Write
+			sub.closeCh()    // unblocks writePump if blocked on channel receive
+		}
 		slog.Info("relay: publisher disconnected", "stream", s.name)
 	}()
 
