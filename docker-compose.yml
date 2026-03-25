@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   bastion:
     build: .
@@ -9,7 +7,7 @@ services:
       - "8080:8080/tcp"   # HTTP API + dashboard
     volumes:
       - bastion-data:/data
-      - ./bastion.prod.toml:/bastion/bastion.toml:ro
+      - ./bastion.toml:/bastion/bastion.toml:ro
     environment:
       - TZ=UTC
     depends_on: []   # no hard deps; Prometheus scrapes bastion independently
