@@ -1,0 +1,45 @@
+# Bastion SRT Relay Server — Default Configuration
+
+[srt]
+# UDP address to listen for SRT connections
+listen_addr = ":9710"
+
+# End-to-end latency in milliseconds
+latency = "120ms"
+
+# Maximum bandwidth per connection in bytes/sec (-1 = unlimited)
+max_bandwidth = -1
+
+# Payload size in bytes (1316 = 7 MPEG-TS packets, standard for SRT)
+payload_size = 1316
+
+# Per-subscriber packet channel buffer size (ring-buffer for backpressure)
+subscriber_buf_size = 512
+
+# Allow streams that are not pre-configured in the database
+allow_unregistered_streams = true
+
+[api]
+# HTTP listen address for REST API and web dashboard
+listen_addr = ":8080"
+
+# CORS allowed origin (set to your dashboard domain in production)
+cors_origin = "*"
+
+# JWT secret for session tokens (change in production!)
+jwt_secret = "changeme-use-a-long-random-secret-in-production"
+
+# AES-256-GCM key for encrypting SRT passphrases at rest (32 hex chars = 16 bytes, or 64 hex chars = 32 bytes)
+# Leave empty to disable at-rest encryption (not recommended for production)
+encryption_key = ""
+
+[database]
+# Path to SQLite database file
+path = "./bastion.db"
+
+[logging]
+# Log level: debug, info, warn, error
+level = "info"
+
+# Log format: text, json
+format = "text"
