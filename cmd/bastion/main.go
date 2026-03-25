@@ -9,7 +9,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/yavik14/bastion/internal/api"
 	"github.com/yavik14/bastion/internal/config"
+	"github.com/yavik14/bastion/internal/db"
+	"github.com/yavik14/bastion/internal/metrics"
+	"github.com/yavik14/bastion/internal/relay"
 )
 
 var version = "dev"
@@ -43,7 +47,6 @@ func main() {
 		"db", cfg.Database.Path,
 	)
 
-	// Phase 2+: relay, db, api, ws components will be wired here.
 	if err := run(ctx, cfg); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -51,10 +54,37 @@ func main() {
 	slog.Info("Bastion stopped")
 }
 
-func run(ctx context.Context, _ *config.Config) error {
-	// Placeholder: block until signal.
-	<-ctx.Done()
-	return nil
+func run(ctx context.Context, cfg *config.Config) error {
+	// Database
+	database, err := db.Open(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer database.Close()
+
+	// Metrics
+	prom := metrics.NewProm()
+
+	// SRT relay
+	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, nil)
+
+	// HTTP API
+	apiSrv, err := api.NewServer(database, r, prom, cfg.API.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("new api server: %w", err)
+	}
+
+	// Start relay and API concurrently.
+	errCh := make(chan error, 2)
+	go func() { errCh <- r.Start(ctx) }()
+	go func() { errCh <- apiSrv.Start(ctx, cfg.API.ListenAddr, cfg.API.CORSOrigin) }()
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		return nil
+	}
 }
 
 func newLogger(cfg config.LoggingConfig) *slog.Logger {
