@@ -95,7 +95,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	go collector.Start(ctx)
 
 	// HTTP API
-	apiSrv, err := api.NewServer(database, r, prom, hub, cfg.API.EncryptionKey)
+	apiSrv, err := api.NewServer(database, r, prom, hub, frontendFS(), cfg.API.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("new api server: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -34,13 +35,19 @@ type Server struct {
 	relay      RelayReader
 	prom       *metrics.Prom
 	hub        *ws.Hub
+	frontend   http.Handler // serves the embedded SPA; nil = no frontend
 	encKey     []byte // AES-256 key for passphrase encryption; nil = disabled
 	httpServer *http.Server
 }
 
 // NewServer constructs an API Server.
-func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, encKeyHex string) (*Server, error) {
+// frontendFS is an optional fs.FS containing the built SvelteKit static files.
+// Pass nil to disable the dashboard (API-only mode).
+func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string) (*Server, error) {
 	s := &Server{db: database, relay: r, prom: p, hub: hub}
+	if frontendFS != nil {
+		s.frontend = staticHandler(frontendFS)
+	}
 	if encKeyHex != "" {
 		key, err := hex.DecodeString(encKeyHex)
 		if err != nil || (len(key) != 16 && len(key) != 32) {
@@ -67,6 +74,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	}))
 
 	// Public endpoints.
+	r.Get("/health", healthHandler)
 	r.Post("/api/v1/auth/login", s.login)
 	r.Get("/metrics", promhttp.HandlerFor(s.prom.Registry, promhttp.HandlerOpts{}).ServeHTTP)
 
@@ -94,6 +102,11 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 		r.Post("/api/v1/users", s.createUser)
 		r.Delete("/api/v1/users/{id}", s.deleteUser)
 	})
+
+	// Serve the SvelteKit SPA for all non-API routes.
+	if s.frontend != nil {
+		r.NotFound(s.frontend.ServeHTTP)
+	}
 
 	s.httpServer = &http.Server{Addr: addr, Handler: r}
 
