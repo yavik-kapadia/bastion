@@ -1,5 +1,5 @@
 # Binaries
-bastion
+/bastion
 /dist/
 
 # SQLite databases
