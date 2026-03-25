@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/yavik14/bastion/internal/api"
 	"github.com/yavik14/bastion/internal/config"
 	"github.com/yavik14/bastion/internal/db"
 	"github.com/yavik14/bastion/internal/metrics"
 	"github.com/yavik14/bastion/internal/relay"
+	"github.com/yavik14/bastion/internal/ws"
 )
 
 var version = "dev"
@@ -65,11 +67,19 @@ func run(ctx context.Context, cfg *config.Config) error {
 	// Metrics
 	prom := metrics.NewProm()
 
+	// WebSocket hub
+	hub := ws.NewHub()
+	go hub.Run(ctx)
+
 	// SRT relay
 	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, nil)
 
+	// Metrics collector: polls relay stats and pushes to WS clients + Prometheus.
+	collector := metrics.NewCollector(r, hub, prom, time.Second)
+	go collector.Start(ctx)
+
 	// HTTP API
-	apiSrv, err := api.NewServer(database, r, prom, cfg.API.EncryptionKey)
+	apiSrv, err := api.NewServer(database, r, prom, hub, cfg.API.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("new api server: %w", err)
 	}

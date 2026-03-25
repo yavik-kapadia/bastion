@@ -16,6 +16,7 @@ import (
 	"github.com/yavik14/bastion/internal/metrics"
 	"github.com/yavik14/bastion/internal/model"
 	"github.com/yavik14/bastion/internal/relay"
+	"github.com/yavik14/bastion/internal/ws"
 )
 
 // fakeRelay is a stub RelayReader for tests.
@@ -39,7 +40,8 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 		t.Fatalf("create admin: %v", err)
 	}
 
-	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), "")
+	hub := ws.NewHub()
+	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, "")
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

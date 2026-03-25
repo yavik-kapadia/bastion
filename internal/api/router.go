@@ -19,6 +19,7 @@ import (
 	"github.com/yavik14/bastion/internal/db"
 	"github.com/yavik14/bastion/internal/metrics"
 	"github.com/yavik14/bastion/internal/relay"
+	"github.com/yavik14/bastion/internal/ws"
 )
 
 // RelayReader is the relay.Relay subset needed by the API.
@@ -32,13 +33,14 @@ type Server struct {
 	db         *db.DB
 	relay      RelayReader
 	prom       *metrics.Prom
+	hub        *ws.Hub
 	encKey     []byte // AES-256 key for passphrase encryption; nil = disabled
 	httpServer *http.Server
 }
 
 // NewServer constructs an API Server.
-func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, encKeyHex string) (*Server, error) {
-	s := &Server{db: database, relay: r, prom: p}
+func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, encKeyHex string) (*Server, error) {
+	s := &Server{db: database, relay: r, prom: p, hub: hub}
 	if encKeyHex != "" {
 		key, err := hex.DecodeString(encKeyHex)
 		if err != nil || (len(key) != 16 && len(key) != 32) {
@@ -81,6 +83,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 		r.Delete("/api/v1/streams/{name}", s.deleteStream)
 
 		r.Get("/api/v1/metrics/global", s.globalMetrics)
+		r.Get("/api/v1/ws", ws.Handler(s.hub))
 	})
 
 	// Admin-only endpoints.
