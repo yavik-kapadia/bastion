@@ -10,7 +10,10 @@ import (
 	"syscall"
 	"time"
 
+	"encoding/hex"
+
 	"github.com/yavik14/bastion/internal/api"
+	"github.com/yavik14/bastion/internal/auth"
 	"github.com/yavik14/bastion/internal/config"
 	"github.com/yavik14/bastion/internal/db"
 	"github.com/yavik14/bastion/internal/metrics"
@@ -71,8 +74,21 @@ func run(ctx context.Context, cfg *config.Config) error {
 	hub := ws.NewHub()
 	go hub.Run(ctx)
 
+	// Decode optional at-rest encryption key.
+	var encKey []byte
+	if cfg.API.EncryptionKey != "" {
+		var err error
+		encKey, err = hex.DecodeString(cfg.API.EncryptionKey)
+		if err != nil {
+			return fmt.Errorf("invalid encryption_key: %w", err)
+		}
+	}
+
+	// Auth guard: enforces per-stream encryption + publisher ACLs.
+	guard := auth.NewGuard(database.Streams, encKey, cfg.SRT.AllowUnregistered)
+
 	// SRT relay
-	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, nil)
+	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, guard.Authorize)
 
 	// Metrics collector: polls relay stats and pushes to WS clients + Prometheus.
 	collector := metrics.NewCollector(r, hub, prom, time.Second)
