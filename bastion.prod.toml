@@ -1,0 +1,29 @@
+# Bastion SRT Relay Server — Production Configuration
+# Copy to bastion.toml (or mount via docker-compose) and fill in secrets.
+
+[srt]
+listen_addr = ":9710"
+latency = "120ms"
+max_bandwidth = -1
+payload_size = 1316
+subscriber_buf_size = 512
+allow_unregistered_streams = false   # require streams to be pre-configured
+
+[api]
+listen_addr = ":8080"
+cors_origin = "https://your-domain.example.com"
+
+# Generate with: openssl rand -hex 32
+jwt_secret = "REPLACE_WITH_RANDOM_64_HEX_CHARS"
+
+# Generate with: openssl rand -hex 32
+# Required for encrypting SRT passphrases at rest.
+encryption_key = "REPLACE_WITH_64_HEX_CHARS"
+
+[database]
+# Mounted via Docker volume — do not change this path when using docker-compose.
+path = "/data/bastion.db"
+
+[logging]
+level = "info"
+format = "json"

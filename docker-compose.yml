@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  bastion:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "9710:9710/udp"   # SRT relay
+      - "8080:8080/tcp"   # HTTP API + dashboard
+    volumes:
+      - bastion-data:/data
+      - ./bastion.prod.toml:/bastion/bastion.toml:ro
+    environment:
+      - TZ=UTC
+    depends_on: []   # no hard deps; Prometheus scrapes bastion independently
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=changeme
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/bastion.json
+
+volumes:
+  bastion-data:
+  prometheus-data:
+  grafana-data:
