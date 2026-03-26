@@ -84,6 +84,13 @@ func (r *UserRepo) List() ([]*model.User, error) {
 	return out, rows.Err()
 }
 
+// Count returns the total number of users.
+func (r *UserRepo) Count() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
 // Delete removes a user by ID.
 func (r *UserRepo) Delete(id string) error {
 	_, err := r.db.Exec(`DELETE FROM users WHERE id = ?`, id)

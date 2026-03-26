@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { metricsStore } from '$lib/ws';
+  import { isManager } from '$lib/stores/auth';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
   import type { Stream, StreamPayload } from '$lib/api';
@@ -80,14 +81,16 @@
           <p class="text-gray-500 text-sm mt-1">{stream.description}</p>
         {/if}
       </div>
-      <div class="flex gap-2">
-        <button class="btn-ghost" on:click={() => { editing = !editing; updateError = ''; }}>
-          {editing ? 'Cancel' : 'Edit'}
-        </button>
-        <button class="btn-danger" on:click={handleDelete} disabled={deleteLoading}>
-          {deleteLoading ? 'Deleting…' : 'Delete'}
-        </button>
-      </div>
+      {#if $isManager}
+        <div class="flex gap-2">
+          <button class="btn-ghost" on:click={() => { editing = !editing; updateError = ''; }}>
+            {editing ? 'Cancel' : 'Edit'}
+          </button>
+          <button class="btn-danger" on:click={handleDelete} disabled={deleteLoading}>
+            {deleteLoading ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
+      {/if}
     </div>
 
     <!-- Live metrics -->
@@ -119,7 +122,7 @@
     <!-- Stream config -->
     <div class="card">
       <h2 class="font-semibold mb-4">Configuration</h2>
-      {#if editing}
+      {#if editing && $isManager}
         <StreamForm
           initial={stream}
           submitLabel="Save Changes"

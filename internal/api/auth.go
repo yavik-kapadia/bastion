@@ -36,6 +36,18 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// requireManager is middleware that requires manager or admin role.
+func (s *Server) requireManager(next http.Handler) http.Handler {
+	return s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := userFromCtx(r.Context())
+		if u == nil || (u.Role != model.RoleManager && u.Role != model.RoleAdmin) {
+			respondError(w, http.StatusForbidden, "manager role required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	}))
+}
+
 // requireAdmin is middleware that requires admin role on top of requireAuth.
 func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	return s.requireAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

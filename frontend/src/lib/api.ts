@@ -56,6 +56,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  setupStatus: () =>
+    request<{ needs_setup: boolean }>('GET', '/auth/setup-status'),
+
+  bootstrap: (username: string, password: string) =>
+    request<AuthResponse>('POST', '/auth/bootstrap', { username, password }),
+
   login: (username: string, password: string) =>
     request<AuthResponse>('POST', '/auth/login', { username, password }),
 

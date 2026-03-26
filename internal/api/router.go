@@ -76,22 +76,30 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	// Public endpoints.
 	r.Get("/health", healthHandler)
 	r.Post("/api/v1/auth/login", s.login)
+	r.Post("/api/v1/auth/bootstrap", s.bootstrap)
+	r.Get("/api/v1/auth/setup-status", s.setupStatus)
 	r.Get("/metrics", promhttp.HandlerFor(s.prom.Registry, promhttp.HandlerOpts{}).ServeHTTP)
 
-	// Authenticated endpoints.
+	// Viewer+ endpoints (any authenticated user).
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
 
 		r.Post("/api/v1/auth/api-keys", s.createAPIKey)
 
 		r.Get("/api/v1/streams", s.listStreams)
-		r.Post("/api/v1/streams", s.createStream)
 		r.Get("/api/v1/streams/{name}", s.getStream)
-		r.Put("/api/v1/streams/{name}", s.updateStream)
-		r.Delete("/api/v1/streams/{name}", s.deleteStream)
 
 		r.Get("/api/v1/metrics/global", s.globalMetrics)
 		r.Get("/api/v1/ws", ws.Handler(s.hub))
+	})
+
+	// Manager+ endpoints (manager or admin).
+	r.Group(func(r chi.Router) {
+		r.Use(s.requireManager)
+
+		r.Post("/api/v1/streams", s.createStream)
+		r.Put("/api/v1/streams/{name}", s.updateStream)
+		r.Delete("/api/v1/streams/{name}", s.deleteStream)
 	})
 
 	// Admin-only endpoints.

@@ -136,7 +136,7 @@ func TestUserCRUD(t *testing.T) {
 
 func TestAPIKey(t *testing.T) {
 	d := openTestDB(t)
-	if err := d.Users.Create("u1", "bob", "pass12345", model.RoleOperator); err != nil {
+	if err := d.Users.Create("u1", "bob", "pass12345", model.RoleManager); err != nil {
 		t.Fatal(err)
 	}
 

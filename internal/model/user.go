@@ -6,9 +6,9 @@ import "time"
 type Role string
 
 const (
-	RoleAdmin    Role = "admin"
-	RoleOperator Role = "operator"
-	RoleViewer   Role = "viewer"
+	RoleAdmin   Role = "admin"
+	RoleManager Role = "manager"
+	RoleViewer  Role = "viewer"
 )
 
 // User is an authenticated principal that can log into the dashboard.

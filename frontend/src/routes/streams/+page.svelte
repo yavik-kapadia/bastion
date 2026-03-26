@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api';
   import { metricsStore } from '$lib/ws';
+  import { isManager } from '$lib/stores/auth';
   import StreamCard from '$lib/components/StreamCard.svelte';
   import type { Stream } from '$lib/api';
 
@@ -25,15 +26,15 @@
       <h1 class="text-2xl font-bold">Streams</h1>
       <p class="text-gray-500 text-sm mt-1">Manage SRT relay stream configurations</p>
     </div>
-    <a href="/streams/new" class="btn-primary">+ New Stream</a>
+    {#if $isManager}<a href="/streams/new" class="btn-primary">+ New Stream</a>{/if}
   </div>
 
   {#if loadError}
     <div class="card border-red-800 text-red-300">{loadError}</div>
   {:else if streams.length === 0}
     <div class="card text-center py-12">
-      <p class="text-gray-500">No streams yet.</p>
-      <a href="/streams/new" class="btn-primary inline-block mt-4">Create Stream</a>
+      <p class="text-gray-500">No streams configured yet.</p>
+      {#if $isManager}<a href="/streams/new" class="btn-primary inline-block mt-4">Create Stream</a>{/if}
     </div>
   {:else}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">

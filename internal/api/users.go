@@ -15,6 +15,43 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+// bootstrap POST /api/v1/auth/bootstrap — creates the first admin user.
+// Returns 409 if any users already exist so it cannot be used after initial setup.
+func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
+	n, err := s.db.Users.Count()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if n > 0 {
+		respondError(w, http.StatusConflict, "already bootstrapped — use /api/v1/auth/login")
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &req); err != nil || req.Username == "" || req.Password == "" {
+		respondError(w, http.StatusBadRequest, "username and password required")
+		return
+	}
+	id := newID()
+	if err := s.db.Users.Create(id, req.Username, req.Password, "admin"); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create admin")
+		return
+	}
+	rawKey, err := s.db.Users.CreateAPIKey(newID(), id, "bootstrap-session")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create session key")
+		return
+	}
+	respond(w, http.StatusCreated, map[string]any{
+		"token":    rawKey,
+		"username": req.Username,
+		"role":     "admin",
+	})
+}
+
 // login POST /api/v1/auth/login — returns a newly created API key as a bearer token.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
@@ -75,6 +112,16 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, users)
 }
 
+// setupStatus GET /api/v1/auth/setup-status — tells the frontend whether first-run setup is needed.
+func (s *Server) setupStatus(w http.ResponseWriter, r *http.Request) {
+	n, err := s.db.Users.Count()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	respond(w, http.StatusOK, map[string]bool{"needs_setup": n == 0})
+}
+
 // createUser POST /api/v1/users (admin only)
 func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -90,7 +137,9 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "username and password required")
 		return
 	}
-	if req.Role == "" {
+	switch req.Role {
+	case model.RoleAdmin, model.RoleManager, model.RoleViewer:
+	default:
 		req.Role = model.RoleViewer
 	}
 	id := newID()

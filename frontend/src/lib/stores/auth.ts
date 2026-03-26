@@ -31,3 +31,4 @@ function createAuthStore() {
 export const auth = createAuthStore();
 export const isLoggedIn = derived(auth, ($auth) => $auth !== null);
 export const isAdmin = derived(auth, ($auth) => $auth?.role === 'admin');
+export const isManager = derived(auth, ($auth) => $auth?.role === 'admin' || $auth?.role === 'manager');

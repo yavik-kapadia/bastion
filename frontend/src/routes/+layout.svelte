@@ -2,13 +2,35 @@
   import '../app.css';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { auth, isLoggedIn } from '$lib/stores/auth';
-  import { connectWS, disconnectWS } from '$lib/ws';
   import { onMount } from 'svelte';
+  import { auth, isLoggedIn, isAdmin } from '$lib/stores/auth';
+  import { connectWS, disconnectWS } from '$lib/ws';
+  import { api } from '$lib/api';
 
-  onMount(() => {
+  const publicRoutes = ['/login', '/setup'];
+
+  onMount(async () => {
+    const path = $page.url.pathname;
+
+    // Always check setup status first.
+    try {
+      const { needs_setup } = await api.setupStatus();
+      if (needs_setup && path !== '/setup') {
+        goto('/setup');
+        return;
+      }
+      if (!needs_setup && path === '/setup') {
+        goto('/login');
+        return;
+      }
+    } catch {
+      // If we can't reach the API, let the current route handle it.
+    }
+
     if ($isLoggedIn) {
       connectWS($auth!.token);
+    } else if (!publicRoutes.includes(path)) {
+      goto('/login');
     }
   });
 
@@ -19,13 +41,12 @@
   }
 
   $: currentPath = $page.url.pathname;
+  $: isPublic = publicRoutes.includes(currentPath);
 </script>
 
-{#if !$isLoggedIn && currentPath !== '/login'}
-  <script>
-    window.location.href = '/login';
-  </script>
-{:else if $isLoggedIn}
+{#if isPublic || !$isLoggedIn}
+  <slot />
+{:else}
   <div class="min-h-screen flex flex-col">
     <!-- Top nav -->
     <nav class="bg-gray-900 border-b border-gray-800 px-6 py-3">
@@ -44,6 +65,11 @@
           <a href="/streams" class="text-sm {currentPath.startsWith('/streams') ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
             Streams
           </a>
+          {#if $isAdmin}
+            <a href="/users" class="text-sm {currentPath.startsWith('/users') ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
+              Users
+            </a>
+          {/if}
         </div>
         <div class="flex items-center gap-4">
           <span class="text-xs text-gray-500">{$auth?.username} · {$auth?.role}</span>
@@ -57,6 +83,4 @@
       <slot />
     </main>
   </div>
-{:else}
-  <slot />
 {/if}
