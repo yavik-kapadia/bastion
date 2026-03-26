@@ -60,11 +60,12 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	}))
 }
 
-// bearerToken extracts the token from "Authorization: Bearer <token>".
+// bearerToken extracts the token from "Authorization: Bearer <token>" or the
+// "token" query parameter (used by WebSocket clients which cannot set headers).
 func bearerToken(r *http.Request) string {
 	h := r.Header.Get("Authorization")
-	if !strings.HasPrefix(h, "Bearer ") {
-		return ""
+	if strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimPrefix(h, "Bearer ")
 	}
-	return strings.TrimPrefix(h, "Bearer ")
+	return r.URL.Query().Get("token")
 }

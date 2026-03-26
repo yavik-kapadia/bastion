@@ -41,10 +41,6 @@ export function connectWS(token: string) {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${protocol}://${location.host}/api/v1/ws`;
 
-  ws = new WebSocket(url, []);
-
-  // Attach token via a first message or via URL query parameter.
-  // The server reads "Authorization: Bearer" — we pass it as a query param fallback.
   ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`);
 
   ws.onopen = () => {
