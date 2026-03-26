@@ -6,7 +6,7 @@
   export let stream: Stream;
   export let metrics: StreamMetrics | undefined = undefined;
 
-  $: health = metrics?.health ?? (stream.has_publisher ? 'green' : 'red');
+  $: health = metrics?.health ?? (stream.has_publisher ? 'yellow' : 'red');
   $: subscriberCount = metrics?.subscriber_count ?? stream.subscriber_count;
   $: bytesRelayed = metrics?.bytes_relayed ?? 0;
 

@@ -153,12 +153,18 @@ func (c *Collector) updatePrometheus(snap MetricsSnapshot) {
 			c.prom.PacketsDropped.WithLabelValues(name).Add(float64(sm.PacketsDropped))
 		}
 
-		// SRT protocol metrics — only meaningful when publisher is active.
+		// SRT protocol metrics — reset to 0 when publisher is gone so gauges
+		// don't show stale values in Grafana after a disconnect.
 		if sm.HasPublisher {
 			c.prom.RTTMs.WithLabelValues(name).Set(sm.RttMs)
 			c.prom.PacketLossRate.WithLabelValues(name).Set(sm.SendLossRate)
 			c.prom.BitrateInMbps.WithLabelValues(name).Set(sm.RecvBitrateMbps)
 			c.prom.BitrateOutMbps.WithLabelValues(name).Set(sm.SendBitrateMbps)
+		} else {
+			c.prom.RTTMs.WithLabelValues(name).Set(0)
+			c.prom.PacketLossRate.WithLabelValues(name).Set(0)
+			c.prom.BitrateInMbps.WithLabelValues(name).Set(0)
+			c.prom.BitrateOutMbps.WithLabelValues(name).Set(0)
 		}
 
 		prevRetrans := c.prevRetrans[name]
