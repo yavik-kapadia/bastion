@@ -7,6 +7,13 @@ export interface StreamMetrics {
   bytes_relayed: number;
   packets_dropped: number;
   health: 'green' | 'yellow' | 'red';
+  // SRT protocol stats
+  rtt_ms: number;
+  send_loss_rate: number;
+  recv_bitrate_mbps: number;
+  send_bitrate_mbps: number;
+  retransmits: number;
+  undecrypted: number;
 }
 
 export interface GlobalMetrics {

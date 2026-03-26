@@ -88,7 +88,10 @@ func run(ctx context.Context, cfg *config.Config) error {
 	guard := auth.NewGuard(database.Streams, encKey, cfg.SRT.AllowUnregistered)
 
 	// SRT relay
-	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, guard.Authorize)
+	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, guard.Authorize, relay.Config{
+		Latency: cfg.SRT.Latency,
+		MaxBW:   cfg.SRT.MaxBandwidth,
+	})
 
 	// Metrics collector: polls relay stats and pushes to WS clients + Prometheus.
 	collector := metrics.NewCollector(r, hub, prom, time.Second)

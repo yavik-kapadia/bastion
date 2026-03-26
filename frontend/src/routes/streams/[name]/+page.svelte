@@ -18,7 +18,7 @@
 
   $: name = $page.params.name;
   $: metrics = $metricsStore?.streams[name];
-  $: health = metrics?.health ?? (stream?.has_publisher ? 'green' : 'red');
+  $: health = metrics?.health ?? (stream?.has_publisher ? 'yellow' : 'red');
 
   onMount(async () => {
     try {
@@ -117,6 +117,52 @@
           <div class="text-xs text-gray-500 mt-1">Encryption</div>
         </div>
       </div>
+
+      <!-- SRT protocol metrics (visible when publisher is active) -->
+      {#if metrics.has_publisher}
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div class="card text-center">
+            <div class="text-2xl font-bold {metrics.rtt_ms > 200 ? 'text-red-400' : metrics.rtt_ms > 50 ? 'text-yellow-400' : 'text-sky-400'}">
+              {metrics.rtt_ms.toFixed(1)} ms
+            </div>
+            <div class="text-xs text-gray-500 mt-1">RTT</div>
+          </div>
+          <div class="card text-center">
+            <div class="text-2xl font-bold {metrics.send_loss_rate > 1 ? 'text-red-400' : metrics.send_loss_rate > 0.1 ? 'text-yellow-400' : 'text-sky-400'}">
+              {metrics.send_loss_rate.toFixed(2)}%
+            </div>
+            <div class="text-xs text-gray-500 mt-1">Loss Rate</div>
+          </div>
+          <div class="card text-center">
+            <div class="text-2xl font-bold text-sky-400">
+              {metrics.recv_bitrate_mbps.toFixed(2)} Mbps
+            </div>
+            <div class="text-xs text-gray-500 mt-1">Inbound</div>
+          </div>
+          <div class="card text-center">
+            <div class="text-2xl font-bold text-sky-400">
+              {metrics.send_bitrate_mbps.toFixed(2)} Mbps
+            </div>
+            <div class="text-xs text-gray-500 mt-1">Outbound</div>
+          </div>
+        </div>
+        {#if metrics.retransmits > 0 || metrics.undecrypted > 0}
+          <div class="grid grid-cols-2 gap-4">
+            <div class="card text-center">
+              <div class="text-2xl font-bold {metrics.retransmits > 0 ? 'text-yellow-400' : 'text-sky-400'}">
+                {metrics.retransmits}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">Retransmits</div>
+            </div>
+            <div class="card text-center">
+              <div class="text-2xl font-bold {metrics.undecrypted > 0 ? 'text-red-400' : 'text-sky-400'}">
+                {metrics.undecrypted}
+              </div>
+              <div class="text-xs text-gray-500 mt-1">Undecrypted</div>
+            </div>
+          </div>
+        {/if}
+      {/if}
     {/if}
 
     <!-- Stream config -->

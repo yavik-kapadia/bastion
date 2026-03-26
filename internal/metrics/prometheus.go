@@ -17,6 +17,8 @@ type Prom struct {
 	RTTMs              *prometheus.GaugeVec
 	BitrateInMbps      *prometheus.GaugeVec
 	BitrateOutMbps     *prometheus.GaugeVec
+	Retransmits        *prometheus.CounterVec
+	Undecrypted        *prometheus.CounterVec
 }
 
 // NewProm registers all Bastion metrics with a fresh Prometheus registry.
@@ -62,6 +64,14 @@ func NewProm() *Prom {
 			Name: "bastion_bitrate_out_mbps",
 			Help: "Outbound bitrate to subscribers in Mbps.",
 		}, []string{"stream"}),
+		Retransmits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "bastion_retransmits_total",
+			Help: "Total SRT packets retransmitted on the publish path per stream.",
+		}, []string{"stream"}),
+		Undecrypted: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "bastion_undecrypted_total",
+			Help: "Total packets that failed decryption (wrong passphrase) per stream.",
+		}, []string{"stream"}),
 	}
 
 	reg.MustRegister(
@@ -74,6 +84,8 @@ func NewProm() *Prom {
 		p.RTTMs,
 		p.BitrateInMbps,
 		p.BitrateOutMbps,
+		p.Retransmits,
+		p.Undecrypted,
 	)
 	return p
 }

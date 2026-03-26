@@ -38,6 +38,13 @@ type StreamMetrics struct {
 	BytesRelayed    uint64  `json:"bytes_relayed"`
 	PacketsDropped  uint64  `json:"packets_dropped"`
 	Health          string  `json:"health"` // "green", "yellow", "red"
+	// SRT protocol-level stats from conn.Stats()
+	RttMs           float64 `json:"rtt_ms"`
+	SendLossRate    float64 `json:"send_loss_rate"`
+	RecvBitrateMbps float64 `json:"recv_bitrate_mbps"`
+	SendBitrateMbps float64 `json:"send_bitrate_mbps"`
+	Retransmits     uint64  `json:"retransmits"`
+	Undecrypted     uint64  `json:"undecrypted"`
 }
 
 // Collector polls relay stats periodically and broadcasts snapshots via the WebSocket hub.
@@ -47,18 +54,22 @@ type Collector struct {
 	prom     *Prom
 	interval time.Duration
 
-	// Previous bytesRelayed per stream for delta calculations.
-	prevBytes map[string]uint64
+	// Previous cumulative values per stream for delta calculations.
+	prevBytes     map[string]uint64
+	prevRetrans   map[string]uint64
+	prevUndecrypt map[string]uint64
 }
 
 // NewCollector creates a Collector with the given poll interval.
 func NewCollector(r RelaySnapshot, hub *ws.Hub, prom *Prom, interval time.Duration) *Collector {
 	return &Collector{
-		relay:     r,
-		hub:       hub,
-		prom:      prom,
-		interval:  interval,
-		prevBytes: make(map[string]uint64),
+		relay:         r,
+		hub:           hub,
+		prom:          prom,
+		interval:      interval,
+		prevBytes:     make(map[string]uint64),
+		prevRetrans:   make(map[string]uint64),
+		prevUndecrypt: make(map[string]uint64),
 	}
 }
 
@@ -107,6 +118,12 @@ func (c *Collector) collect() MetricsSnapshot {
 			BytesRelayed:    st.BytesRelayed,
 			PacketsDropped:  st.PacketsDropped,
 			Health:          health,
+			RttMs:           st.SRT.MsRTT,
+			SendLossRate:    st.SRT.SendLossRate,
+			RecvBitrateMbps: st.SRT.RecvBitrateMbps,
+			SendBitrateMbps: st.SRT.SendBitrateMbps,
+			Retransmits:     st.SRT.PktRetrans,
+			Undecrypted:     st.SRT.PktUndecrypt,
 		}
 	}
 
@@ -135,25 +152,41 @@ func (c *Collector) updatePrometheus(snap MetricsSnapshot) {
 		if sm.PacketsDropped > 0 {
 			c.prom.PacketsDropped.WithLabelValues(name).Add(float64(sm.PacketsDropped))
 		}
+
+		// SRT protocol metrics — only meaningful when publisher is active.
+		if sm.HasPublisher {
+			c.prom.RTTMs.WithLabelValues(name).Set(sm.RttMs)
+			c.prom.PacketLossRate.WithLabelValues(name).Set(sm.SendLossRate)
+			c.prom.BitrateInMbps.WithLabelValues(name).Set(sm.RecvBitrateMbps)
+			c.prom.BitrateOutMbps.WithLabelValues(name).Set(sm.SendBitrateMbps)
+		}
+
+		prevRetrans := c.prevRetrans[name]
+		if sm.Retransmits > prevRetrans {
+			c.prom.Retransmits.WithLabelValues(name).Add(float64(sm.Retransmits - prevRetrans))
+		}
+		c.prevRetrans[name] = sm.Retransmits
+
+		prevUndecrypt := c.prevUndecrypt[name]
+		if sm.Undecrypted > prevUndecrypt {
+			c.prom.Undecrypted.WithLabelValues(name).Add(float64(sm.Undecrypted - prevUndecrypt))
+		}
+		c.prevUndecrypt[name] = sm.Undecrypted
 	}
 }
 
-// healthStatus returns "green", "yellow", or "red" based on stream health.
-// Without per-connection SRT stats (RTT, loss) at this layer we use
-// packets-dropped as the primary signal; a future enhancement can add
-// per-connection RTT once gosrt exposes Stats() on live connections.
+// healthStatus returns "green", "yellow", or "red" based on real SRT protocol
+// metrics (RTT and send-path loss rate) from conn.Stats().
 func healthStatus(st relay.StreamStats) string {
 	if !st.HasPublisher {
 		return "red"
 	}
-	dropRate := float64(0)
-	if st.BytesRelayed > 0 {
-		dropRate = float64(st.PacketsDropped) / (float64(st.BytesRelayed)/1316.0 + float64(st.PacketsDropped)) * 100
-	}
+	rtt := st.SRT.MsRTT
+	loss := st.SRT.SendLossRate
 	switch {
-	case dropRate > 5:
+	case rtt > 200 || loss > 1:
 		return "red"
-	case dropRate > 1:
+	case rtt > 50 || loss > 0.1:
 		return "yellow"
 	default:
 		return "green"

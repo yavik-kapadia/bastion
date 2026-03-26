@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	srt "github.com/datarhei/gosrt"
 )
@@ -16,12 +17,23 @@ import (
 // A nil AuthFunc allows all connections with no encryption.
 type AuthFunc func(sid *StreamID, remoteAddr net.Addr) (passphrase string, err error)
 
+// Config holds SRT-level tuning parameters for the relay listener.
+type Config struct {
+	// Latency is the SRT latency window applied globally.
+	// A zero value uses the gosrt default (120ms).
+	Latency time.Duration
+	// MaxBW is the maximum sending bandwidth in bytes/sec.
+	// -1 = unlimited (gosrt default).
+	MaxBW int64
+}
+
 // Relay is the core SRT relay engine: it accepts incoming connections,
 // routes publishers and subscribers to named streams, and fans out packets.
 type Relay struct {
 	addr    string
 	bufSize int
 	auth    AuthFunc
+	cfg     Config
 
 	mu      sync.RWMutex
 	streams map[string]*Stream
@@ -29,11 +41,12 @@ type Relay struct {
 
 // New creates a new Relay that will listen on addr.
 // bufSize is the per-subscriber ring-buffer capacity in packets.
-func New(addr string, bufSize int, auth AuthFunc) *Relay {
+func New(addr string, bufSize int, auth AuthFunc, cfg Config) *Relay {
 	return &Relay{
 		addr:    addr,
 		bufSize: bufSize,
 		auth:    auth,
+		cfg:     cfg,
 		streams: make(map[string]*Stream),
 	}
 }
@@ -41,10 +54,17 @@ func New(addr string, bufSize int, auth AuthFunc) *Relay {
 // Start begins listening for SRT connections. It blocks until ctx is cancelled
 // or a fatal listen error occurs.
 func (r *Relay) Start(ctx context.Context) error {
-	cfg := srt.DefaultConfig()
-	cfg.Logger = srt.NewLogger(nil)
+	srtCfg := srt.DefaultConfig()
+	srtCfg.Logger = srt.NewLogger(nil)
+	if r.cfg.Latency > 0 {
+		srtCfg.PeerLatency = r.cfg.Latency
+		srtCfg.ReceiverLatency = r.cfg.Latency
+	}
+	if r.cfg.MaxBW != 0 {
+		srtCfg.MaxBW = r.cfg.MaxBW
+	}
 
-	ln, err := srt.Listen("srt", r.addr, cfg)
+	ln, err := srt.Listen("srt", r.addr, srtCfg)
 	if err != nil {
 		return fmt.Errorf("srt listen %s: %w", r.addr, err)
 	}

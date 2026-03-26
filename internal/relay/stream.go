@@ -129,6 +129,16 @@ func (s *Stream) Close() {
 	s.subscriberCount.Store(0)
 }
 
+// SRTStats holds SRT protocol-level statistics collected from live connections.
+type SRTStats struct {
+	MsRTT            float64 // Smoothed RTT to publisher in milliseconds
+	SendLossRate     float64 // Publisher send-path loss rate (0–100)
+	RecvBitrateMbps  float64 // Inbound bitrate from publisher in Mbps
+	SendBitrateMbps  float64 // Outbound bitrate to all subscribers combined in Mbps
+	PktRetrans       uint64  // Total retransmitted packets on the publish path
+	PktUndecrypt     uint64  // Total failed decryptions across all connections
+}
+
 // StreamStats returns a snapshot of current stream statistics.
 type StreamStats struct {
 	Name            string
@@ -137,6 +147,7 @@ type StreamStats struct {
 	PacketsDropped  uint64
 	HasPublisher    bool
 	CreatedAt       time.Time
+	SRT             SRTStats
 }
 
 func (s *Stream) Stats() StreamStats {
@@ -150,7 +161,40 @@ func (s *Stream) Stats() StreamStats {
 		PacketsDropped:  s.packetsDropped.Load(),
 		HasPublisher:    hasPub,
 		CreatedAt:       s.createdAt,
+		SRT:             s.collectSRTStats(),
 	}
+}
+
+// collectSRTStats reads live SRT protocol statistics from the publisher and
+// all subscriber connections. Called under no lock — grabs a snapshot of conn
+// pointers under RLock, then calls Stats() outside the lock to avoid holding
+// the mutex during potentially slow SRT internal calls.
+func (s *Stream) collectSRTStats() SRTStats {
+	s.mu.RLock()
+	pub := s.publisher
+	subs := make([]*subscriber, 0, len(s.subscribers))
+	for _, sub := range s.subscribers {
+		subs = append(subs, sub)
+	}
+	s.mu.RUnlock()
+
+	var out SRTStats
+	if pub != nil {
+		var st srt.Statistics
+		pub.Stats(&st)
+		out.MsRTT = st.Instantaneous.MsRTT
+		out.SendLossRate = st.Instantaneous.PktSendLossRate
+		out.RecvBitrateMbps = st.Instantaneous.MbpsRecvRate
+		out.PktRetrans = st.Accumulated.PktRetrans
+		out.PktUndecrypt = st.Accumulated.PktRecvUndecrypt
+	}
+	for _, sub := range subs {
+		var st srt.Statistics
+		sub.conn.Stats(&st)
+		out.SendBitrateMbps += st.Instantaneous.MbpsSentRate
+		out.PktUndecrypt += st.Accumulated.PktRecvUndecrypt
+	}
+	return out
 }
 
 // relayLoop reads packets from the publisher and fans them out to all subscribers.
