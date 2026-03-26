@@ -112,7 +112,19 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream.Passphrase = ""
-	respond(w, http.StatusOK, stream)
+	// Merge live relay stats so the detail page has the same has_publisher /
+	// subscriber_count fields as the list endpoint.
+	type streamView struct {
+		*model.Stream
+		HasPublisher    bool `json:"has_publisher"`
+		SubscriberCount int  `json:"subscriber_count"`
+	}
+	v := streamView{Stream: stream}
+	if stats, ok := s.relay.StreamStats(name); ok {
+		v.HasPublisher = stats.HasPublisher
+		v.SubscriberCount = stats.SubscriberCount
+	}
+	respond(w, http.StatusOK, v)
 }
 
 // updateStream PUT /api/v1/streams/{name}
