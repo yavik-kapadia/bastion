@@ -122,13 +122,13 @@
       {#if metrics.has_publisher}
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div class="card text-center">
-            <div class="text-2xl font-bold {metrics.rtt_ms > 200 ? 'text-red-400' : metrics.rtt_ms > 50 ? 'text-yellow-400' : 'text-sky-400'}">
+            <div class="text-2xl font-bold {metrics.rtt_ms > 500 ? 'text-red-400' : metrics.rtt_ms > 150 ? 'text-yellow-400' : 'text-sky-400'}">
               {metrics.rtt_ms.toFixed(1)} ms
             </div>
             <div class="text-xs text-gray-500 mt-1">RTT</div>
           </div>
           <div class="card text-center">
-            <div class="text-2xl font-bold {metrics.send_loss_rate > 1 ? 'text-red-400' : metrics.send_loss_rate > 0.1 ? 'text-yellow-400' : 'text-sky-400'}">
+            <div class="text-2xl font-bold {metrics.send_loss_rate > 5 ? 'text-red-400' : metrics.send_loss_rate > 1 ? 'text-yellow-400' : 'text-sky-400'}">
               {metrics.send_loss_rate.toFixed(2)}%
             </div>
             <div class="text-xs text-gray-500 mt-1">Loss Rate</div>

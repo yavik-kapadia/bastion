@@ -190,9 +190,9 @@ func healthStatus(st relay.StreamStats) string {
 	rtt := st.SRT.MsRTT
 	loss := st.SRT.SendLossRate
 	switch {
-	case rtt > 200 || loss > 1:
+	case rtt > 500 || loss > 5:
 		return "red"
-	case rtt > 50 || loss > 0.1:
+	case rtt > 150 || loss > 1:
 		return "yellow"
 	default:
 		return "green"
