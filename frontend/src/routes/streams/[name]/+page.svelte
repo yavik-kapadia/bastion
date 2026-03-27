@@ -5,7 +5,7 @@
   import { api } from '$lib/api';
   import { metricsStore } from '$lib/ws';
   import { isManager } from '$lib/stores/auth';
-  import { settings } from '$lib/stores/settings';
+  import { settings, resolvedHost } from '$lib/stores/settings';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
   import type { Stream, StreamPayload } from '$lib/api';
@@ -34,7 +34,7 @@
   $: health = metrics?.health ?? (stream?.has_publisher ? 'yellow' : 'red');
   $: hasPublisher = metrics?.has_publisher ?? stream?.has_publisher ?? false;
 
-  $: host = $settings.hostUrl || '<host>';
+  $: host = $settings.hostUrl || $resolvedHost || '<host>';
 
   $: publishCmd = `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`;
   $: subscribeCmd = `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`;

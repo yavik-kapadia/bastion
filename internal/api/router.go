@@ -39,14 +39,15 @@ type Server struct {
 	frontend   http.Handler // serves the embedded SPA; nil = no frontend
 	encKey     []byte       // AES-256 key for passphrase encryption; nil = disabled
 	srtAddr    string       // SRT listener address, used for thumbnail frame grabs
+	publicHost string       // optional host returned to clients for SRT command generation
 	httpServer *http.Server
 }
 
 // NewServer constructs an API Server.
 // frontendFS is an optional fs.FS containing the built SvelteKit static files.
 // Pass nil to disable the dashboard (API-only mode).
-func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string) (*Server, error) {
-	s := &Server{db: database, relay: r, prom: p, hub: hub, srtAddr: srtAddr}
+func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string, publicHost string) (*Server, error) {
+	s := &Server{db: database, relay: r, prom: p, hub: hub, srtAddr: srtAddr, publicHost: publicHost}
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
 	}

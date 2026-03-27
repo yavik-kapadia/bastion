@@ -32,6 +32,7 @@ type APIConfig struct {
 	CORSOrigin    string `toml:"cors_origin"`
 	JWTSecret     string `toml:"jwt_secret"`
 	EncryptionKey string `toml:"encryption_key"`
+	PublicHost    string `toml:"public_host"`
 }
 
 // DatabaseConfig configures the SQLite database.

@@ -19,7 +19,7 @@
         userId: res.user_id,
         username: res.username,
         role: res.role
-      });
+      }, res.public_host);
       connectWS(res.token);
       goto('/');
     } catch (e: unknown) {
