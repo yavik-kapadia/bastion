@@ -24,7 +24,7 @@ COPY . .
 COPY --from=frontend-builder /app/frontend/build ./cmd/bastion/frontend/
 
 # Build a fully static binary (no CGo, no external libs).
-RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-w -s" -o bastion ./cmd/bastion
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bastion ./cmd/bastion
 
 # ── Stage 3: Runtime image ─────────────────────────────────────────────────────
 FROM alpine:3.20
