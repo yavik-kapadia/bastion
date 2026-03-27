@@ -32,11 +32,16 @@
 
   let host = $derived(resolvedHost() || '<host>');
 
+  let passphraseSuffix = $derived(
+    stream?.key_length && stream.key_length > 0
+      ? `&passphrase=${stream.passphrase || '<pass>'}`
+      : ''
+  );
   let publishCmd = $derived(
-    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`
+    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${passphraseSuffix}"`
   );
   let subscribeCmd = $derived(
-    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`
+    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${passphraseSuffix}"`
   );
 
   function refreshThumbnail() {

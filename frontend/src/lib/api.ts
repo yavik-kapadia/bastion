@@ -8,6 +8,7 @@ export interface Stream {
   max_subscribers: number;
   allowed_publishers: string[];
   enabled: boolean;
+  passphrase?: string;
   has_publisher: boolean;
   subscriber_count: number;
   created_at: string;
@@ -79,7 +80,8 @@ export const api = {
   logout: () => request<{ status: string }>('POST', '/auth/logout'),
 
   listStreams: () => request<Stream[]>('GET', '/streams'),
-  getStream: (name: string) => request<Stream>('GET', `/streams/${name}`),
+  getStream: (name: string, reveal = false) =>
+    request<Stream>('GET', `/streams/${name}${reveal ? '?reveal=true' : ''}`),
   createStream: (p: StreamPayload) => request<Stream>('POST', '/streams', p),
   updateStream: (name: string, p: Partial<StreamPayload>) =>
     request<Stream>('PUT', `/streams/${name}`, p),
