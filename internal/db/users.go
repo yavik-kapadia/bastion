@@ -36,13 +36,21 @@ func (r *UserRepo) Create(id, username, password string, role model.Role) error 
 	return nil
 }
 
+// dummyHash is a pre-computed bcrypt hash used to ensure constant-time
+// response when a username does not exist, preventing user enumeration
+// via timing side-channels.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-constant-time-placeholder"), bcrypt.DefaultCost)
+
 // Authenticate returns the User if username+password are valid.
+// Always runs bcrypt.CompareHashAndPassword to prevent timing attacks.
 func (r *UserRepo) Authenticate(username, password string) (*model.User, error) {
-	u, err := r.GetByUsername(username)
-	if err != nil {
-		return nil, fmt.Errorf("user not found")
+	u, lookupErr := r.GetByUsername(username)
+	hash := dummyHash
+	if lookupErr == nil {
+		hash = []byte(u.PasswordHash)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+	compareErr := bcrypt.CompareHashAndPassword(hash, []byte(password))
+	if lookupErr != nil || compareErr != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	return u, nil

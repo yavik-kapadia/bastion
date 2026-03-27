@@ -3,12 +3,16 @@ package api
 import (
 	"database/sql"
 	"net/http"
+	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/yavik14/bastion/internal/model"
 )
+
+// validStreamName restricts stream names to safe characters only.
+var validStreamName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,63}$`)
 
 // streamRequest is the JSON body for create/update.
 type streamRequest struct {
@@ -51,12 +55,16 @@ func (s *Server) listStreams(w http.ResponseWriter, r *http.Request) {
 // createStream POST /api/v1/streams
 func (s *Server) createStream(w http.ResponseWriter, r *http.Request) {
 	var req streamRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Name == "" {
 		respondError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if !validStreamName.MatchString(req.Name) {
+		respondError(w, http.StatusBadRequest, "name must be 1–63 characters: letters, digits, hyphens, underscores only")
 		return
 	}
 	if req.KeyLength != 0 && req.KeyLength != 16 && req.KeyLength != 24 && req.KeyLength != 32 {
@@ -141,7 +149,7 @@ func (s *Server) updateStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req streamRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}

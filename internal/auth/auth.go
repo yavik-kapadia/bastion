@@ -10,10 +10,16 @@ import (
 	"github.com/yavik14/bastion/internal/relay"
 )
 
+// StreamStatsGetter is the relay subset used to enforce subscriber caps.
+type StreamStatsGetter interface {
+	StreamStats(name string) (relay.StreamStats, bool)
+}
+
 // Guard implements relay.AuthFunc by looking up stream configurations in the
 // database and enforcing encryption, publisher allowlists, and subscriber caps.
 type Guard struct {
 	streams   *db.StreamRepo
+	relay     StreamStatsGetter
 	encKey    []byte
 	allowAnon bool // allow streams not registered in DB
 }
@@ -21,8 +27,9 @@ type Guard struct {
 // NewGuard creates a Guard.
 // encKey is the AES key used to decrypt stored passphrases (may be nil).
 // allowAnon permits connections to streams not registered in the database.
-func NewGuard(streams *db.StreamRepo, encKey []byte, allowAnon bool) *Guard {
-	return &Guard{streams: streams, encKey: encKey, allowAnon: allowAnon}
+// r is used to check live subscriber counts for MaxSubscribers enforcement.
+func NewGuard(streams *db.StreamRepo, r StreamStatsGetter, encKey []byte, allowAnon bool) *Guard {
+	return &Guard{streams: streams, relay: r, encKey: encKey, allowAnon: allowAnon}
 }
 
 // Authorize is the relay.AuthFunc signature.
@@ -40,6 +47,16 @@ func (g *Guard) Authorize(sid *relay.StreamID, remoteAddr net.Addr) (string, err
 
 	if !stream.Enabled {
 		return "", fmt.Errorf("stream %q is disabled", sid.Name)
+	}
+
+	// Enforce subscriber cap (subscribe mode only).
+	if sid.Mode == relay.ModeRequest && stream.MaxSubscribers > 0 && g.relay != nil {
+		if stats, ok := g.relay.StreamStats(sid.Name); ok {
+			if stats.SubscriberCount >= stream.MaxSubscribers {
+				return "", fmt.Errorf("stream %q is at subscriber capacity (%d/%d)",
+					sid.Name, stats.SubscriberCount, stream.MaxSubscribers)
+			}
+		}
 	}
 
 	// Enforce publisher allowlist (publish mode only).

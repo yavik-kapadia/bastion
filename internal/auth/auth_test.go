@@ -34,7 +34,7 @@ func remoteAddr(addr string) net.Addr {
 
 func TestAllowUnregistered(t *testing.T) {
 	d := openDB(t)
-	g := NewGuard(d.Streams, nil, true)
+	g := NewGuard(d.Streams, nil, nil, true)
 	sid := &relay.StreamID{Mode: relay.ModePublish, Name: "unknown"}
 	pass, err := g.Authorize(sid, remoteAddr("10.0.0.1:1234"))
 	if err != nil {
@@ -47,7 +47,7 @@ func TestAllowUnregistered(t *testing.T) {
 
 func TestRejectUnregistered(t *testing.T) {
 	d := openDB(t)
-	g := NewGuard(d.Streams, nil, false)
+	g := NewGuard(d.Streams, nil, nil, false)
 	sid := &relay.StreamID{Mode: relay.ModePublish, Name: "ghost"}
 	_, err := g.Authorize(sid, remoteAddr("10.0.0.1:1234"))
 	if err == nil {
@@ -61,7 +61,7 @@ func TestDisabledStream(t *testing.T) {
 		ID: "s1", Name: "off", Enabled: false,
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	})
-	g := NewGuard(d.Streams, nil, false)
+	g := NewGuard(d.Streams, nil, nil, false)
 	_, err := g.Authorize(&relay.StreamID{Name: "off"}, remoteAddr("10.0.0.1:1234"))
 	if err == nil {
 		t.Error("expected error for disabled stream")
@@ -75,7 +75,7 @@ func TestPublisherAllowlist(t *testing.T) {
 		AllowedPublishers: []string{"192.168.1.0/24"},
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	})
-	g := NewGuard(d.Streams, nil, false)
+	g := NewGuard(d.Streams, nil, nil, false)
 
 	// Allowed IP
 	_, err := g.Authorize(&relay.StreamID{Mode: relay.ModePublish, Name: "restricted"},
@@ -108,7 +108,7 @@ func TestEncryptionPassthroughNoKey(t *testing.T) {
 		KeyLength:  32,
 		CreatedAt:  time.Now(), UpdatedAt: time.Now(),
 	})
-	g := NewGuard(d.Streams, nil, false)
+	g := NewGuard(d.Streams, nil, nil, false)
 	pass, err := g.Authorize(&relay.StreamID{Name: "enc-stream"}, remoteAddr("1.2.3.4:1234"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -2,15 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
-
-	"encoding/hex"
 
 	"github.com/yavik14/bastion/internal/api"
 	"github.com/yavik14/bastion/internal/auth"
@@ -84,14 +84,19 @@ func run(ctx context.Context, cfg *config.Config) error {
 		}
 	}
 
-	// Auth guard: enforces per-stream encryption + publisher ACLs.
-	guard := auth.NewGuard(database.Streams, encKey, cfg.SRT.AllowUnregistered)
-
-	// SRT relay
-	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, guard.Authorize, relay.Config{
+	// SRT relay — created first so we can pass it to the auth guard.
+	// Auth is wired via a closure so the guard pointer is set before any
+	// connection is accepted (r.Start is called after both are constructed).
+	var guard *auth.Guard
+	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, func(sid *relay.StreamID, addr net.Addr) (string, error) {
+		return guard.Authorize(sid, addr)
+	}, relay.Config{
 		Latency: cfg.SRT.Latency,
 		MaxBW:   cfg.SRT.MaxBandwidth,
 	})
+
+	// Auth guard: enforces per-stream encryption, publisher ACLs, subscriber caps.
+	guard = auth.NewGuard(database.Streams, r, encKey, cfg.SRT.AllowUnregistered)
 
 	// Metrics collector: polls relay stats and pushes to WS clients + Prometheus.
 	collector := metrics.NewCollector(r, hub, prom, time.Second)

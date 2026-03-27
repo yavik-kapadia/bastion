@@ -5,6 +5,10 @@ import (
 	"net/http"
 )
 
+// maxBodyBytes is the maximum request body size accepted by decodeJSON.
+// 64 KB is generous for any JSON payload Bastion expects.
+const maxBodyBytes = 64 * 1024
+
 type apiResponse struct {
 	Data  any    `json:"data,omitempty"`
 	Error string `json:"error,omitempty"`
@@ -22,6 +26,7 @@ func respondError(w http.ResponseWriter, status int, msg string) {
 	json.NewEncoder(w).Encode(apiResponse{Error: msg}) //nolint:errcheck
 }
 
-func decodeJSON(r *http.Request, dst any) error {
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	return json.NewDecoder(r.Body).Decode(dst)
 }

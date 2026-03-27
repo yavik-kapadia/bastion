@@ -31,8 +31,12 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := decodeJSON(r, &req); err != nil || req.Username == "" || req.Password == "" {
+	if err := decodeJSON(w, r, &req); err != nil || req.Username == "" || req.Password == "" {
 		respondError(w, http.StatusBadRequest, "username and password required")
+		return
+	}
+	if len(req.Password) < 8 {
+		respondError(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 	id := newID()
@@ -55,7 +59,7 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 // login POST /api/v1/auth/login — returns a newly created API key as a bearer token.
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -84,7 +88,7 @@ func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name string `json:"name"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
+	if err := decodeJSON(w, r, &body); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -129,12 +133,16 @@ func (s *Server) createUser(w http.ResponseWriter, r *http.Request) {
 		Password string     `json:"password"`
 		Role     model.Role `json:"role"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
 		respondError(w, http.StatusBadRequest, "username and password required")
+		return
+	}
+	if len(req.Password) < 8 {
+		respondError(w, http.StatusBadRequest, "password must be at least 8 characters")
 		return
 	}
 	switch req.Role {

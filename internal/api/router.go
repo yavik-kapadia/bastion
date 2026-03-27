@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -58,6 +59,22 @@ func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, fro
 	return s, nil
 }
 
+// securityHeaders adds defensive HTTP headers to every response.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// loginLimiter allows 10 login attempts per IP per 15 minutes.
+var loginLimiter = newLoginRateLimiter(10, 15*time.Minute)
+
 // Start binds the HTTP server and serves requests until ctx is cancelled.
 func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) error {
 	r := chi.NewRouter()
@@ -66,6 +83,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
+	r.Use(securityHeaders)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{corsOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -75,7 +93,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 
 	// Public endpoints.
 	r.Get("/health", healthHandler)
-	r.Post("/api/v1/auth/login", s.login)
+	r.Post("/api/v1/auth/login", loginLimiter.middleware(s.login))
 	r.Post("/api/v1/auth/bootstrap", s.bootstrap)
 	r.Get("/api/v1/auth/setup-status", s.setupStatus)
 	r.Get("/metrics", promhttp.HandlerFor(s.prom.Registry, promhttp.HandlerOpts{}).ServeHTTP)
