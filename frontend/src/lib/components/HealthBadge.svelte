@@ -16,7 +16,7 @@
 
   const sizes = {
     sm: 'w-2 h-2',
-    md: 'w-3 h-3'
+    md: 'w-2.5 h-2.5'
   };
 </script>
 

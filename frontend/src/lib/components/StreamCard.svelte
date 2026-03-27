@@ -18,7 +18,7 @@
   }
 </script>
 
-<a href="/streams/{stream.name}" class="card hover:border-gray-700 transition-colors block group">
+<a href="/streams/{stream.name}" class="card hover:border-sky-800/50 transition-all block group">
   <div class="flex items-start justify-between mb-3">
     <div>
       <h2 class="font-semibold text-base text-gray-100 group-hover:text-sky-400 transition-colors">

@@ -56,7 +56,7 @@
         </div>
         <div class="flex items-center gap-4">
           <span class="text-xs text-gray-500">{data.auth?.username} · {data.auth?.role}</span>
-          <button onclick={logout} class="text-xs btn-ghost py-1">Sign out</button>
+          <button onclick={logout} class="text-xs text-gray-500 hover:text-gray-200 transition-colors cursor-pointer py-1">Sign out</button>
         </div>
       </div>
     </nav>
