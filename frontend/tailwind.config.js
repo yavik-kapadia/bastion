@@ -3,6 +3,9 @@ export default {
 	content: ['./src/**/*.{html,js,svelte,ts}'],
 	theme: {
 		extend: {
+			fontFamily: {
+				sans: ['Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif']
+			},
 			colors: {
 				bastion: {
 					50: '#f0f9ff',
