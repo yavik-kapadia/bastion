@@ -1,31 +1,23 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { api } from '$lib/api';
   import { metricsStore } from '$lib/ws';
+  import { api } from '$lib/api';
   import StreamCard from '$lib/components/StreamCard.svelte';
   import GlobalStats from '$lib/components/GlobalStats.svelte';
   import type { Stream } from '$lib/api';
 
-  let streams: Stream[] = [];
-  let loadError = '';
-
-  onMount(async () => {
-    try {
-      streams = await api.listStreams();
-    } catch (e: unknown) {
-      loadError = e instanceof Error ? e.message : 'Failed to load streams';
-    }
-  });
+  let { data } = $props();
+  let streams: Stream[] = $state(data.streams);
 
   // Reactively update stream list when metrics arrive (add new streams dynamically).
-  $: if ($metricsStore) {
-    const knownNames = new Set(streams.map((s) => s.name));
-    const metricNames = Object.keys($metricsStore.streams);
-    // Refetch if new streams appear in metrics that aren't in our list.
-    if (metricNames.some((n) => !knownNames.has(n))) {
-      api.listStreams().then((s) => { streams = s; }).catch(() => {});
+  $effect(() => {
+    if ($metricsStore) {
+      const knownNames = new Set(streams.map((s) => s.name));
+      const metricNames = Object.keys($metricsStore.streams);
+      if (metricNames.some((n) => !knownNames.has(n))) {
+        api.listStreams().then((s) => { streams = s; }).catch(() => {});
+      }
     }
-  }
+  });
 </script>
 
 <svelte:head>
@@ -40,9 +32,7 @@
 
   <GlobalStats metrics={$metricsStore?.global ?? null} />
 
-  {#if loadError}
-    <div class="card border-red-800 text-red-300">{loadError}</div>
-  {:else if streams.length === 0}
+  {#if streams.length === 0}
     <div class="card text-center py-12">
       <p class="text-gray-500">No streams configured yet.</p>
       <a href="/streams/new" class="btn-primary inline-block mt-4">Create your first stream</a>
