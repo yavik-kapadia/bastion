@@ -4,7 +4,7 @@ export default {
 	theme: {
 		extend: {
 			fontFamily: {
-				sans: ['Archivo', 'ui-sans-serif', 'system-ui', 'sans-serif']
+				sans: ['Aileron', 'ui-sans-serif', 'system-ui', 'sans-serif']
 			},
 			colors: {
 				bastion: {
