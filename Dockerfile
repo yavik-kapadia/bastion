@@ -29,8 +29,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -ldflags="-w -s" -o bastion ./cmd/basti
 # ── Stage 3: Runtime image ─────────────────────────────────────────────────────
 FROM alpine:3.20
 
-# Install CA certificates for outbound TLS (e.g., future webhook support).
-RUN apk add --no-cache ca-certificates tzdata
+# Install CA certificates, timezone data, and ffmpeg for stream thumbnail generation.
+RUN apk add --no-cache ca-certificates tzdata ffmpeg
 
 WORKDIR /bastion
 

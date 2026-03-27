@@ -51,7 +51,7 @@ func newTestServer(t *testing.T) *testServer {
 	hub := ws.NewHub()
 
 	r := relay.New(srtAddr, 256, nil, relay.Config{})
-	apiSrv, err := api.NewServer(database, r, prom, hub, nil, "")
+	apiSrv, err := api.NewServer(database, r, prom, hub, nil, "", "")
 	if err != nil {
 		t.Fatalf("new api server: %v", err)
 	}

@@ -1,10 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { api } from '$lib/api';
   import { metricsStore } from '$lib/ws';
   import { isManager } from '$lib/stores/auth';
+  import { settings } from '$lib/stores/settings';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
   import type { Stream, StreamPayload } from '$lib/api';
@@ -16,9 +17,40 @@
   let updateError = '';
   let deleteLoading = false;
 
+  // Host URL setting
+  let hostInput = $settings.hostUrl;
+
+  // Thumbnail
+  let thumbnailSrc = '';
+  let thumbnailError = false;
+  let thumbnailInterval: ReturnType<typeof setInterval>;
+
+  // Copy feedback
+  let copiedPublish = false;
+  let copiedSubscribe = false;
+
   $: name = $page.params.name;
   $: metrics = $metricsStore?.streams[name];
   $: health = metrics?.health ?? (stream?.has_publisher ? 'yellow' : 'red');
+  $: hasPublisher = metrics?.has_publisher ?? stream?.has_publisher ?? false;
+
+  $: host = $settings.hostUrl || '<host>';
+
+  $: publishCmd = `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`;
+  $: subscribeCmd = `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${stream?.key_length && stream.key_length > 0 ? '&passphrase=<pass>' : ''}"`;
+
+  function refreshThumbnail() {
+    if (!hasPublisher) return;
+    const token = localStorage.getItem('token') ?? '';
+    thumbnailSrc = `/api/v1/streams/${encodeURIComponent(name)}/thumbnail?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+    thumbnailError = false;
+  }
+
+  $: if (hasPublisher) {
+    refreshThumbnail();
+  } else {
+    thumbnailSrc = '';
+  }
 
   onMount(async () => {
     try {
@@ -26,7 +58,29 @@
     } catch (e: unknown) {
       loadError = e instanceof Error ? e.message : 'Not found';
     }
+    thumbnailInterval = setInterval(() => {
+      if (hasPublisher) refreshThumbnail();
+    }, 15000);
   });
+
+  onDestroy(() => {
+    clearInterval(thumbnailInterval);
+  });
+
+  function saveHostUrl() {
+    settings.setHostUrl(hostInput);
+  }
+
+  async function copyText(text: string, which: 'publish' | 'subscribe') {
+    await navigator.clipboard.writeText(text);
+    if (which === 'publish') {
+      copiedPublish = true;
+      setTimeout(() => (copiedPublish = false), 2000);
+    } else {
+      copiedSubscribe = true;
+      setTimeout(() => (copiedSubscribe = false), 2000);
+    }
+  }
 
   async function handleUpdate(e: CustomEvent<StreamPayload>) {
     updateLoading = true;
@@ -92,6 +146,19 @@
         </div>
       {/if}
     </div>
+
+    <!-- Preview thumbnail -->
+    {#if thumbnailSrc && !thumbnailError}
+      <div class="card overflow-hidden p-0">
+        <img
+          src={thumbnailSrc}
+          alt="Stream preview"
+          class="w-full object-cover rounded-lg"
+          style="max-height: 360px;"
+          on:error={() => { thumbnailError = true; }}
+        />
+      </div>
+    {/if}
 
     <!-- Live metrics -->
     {#if metrics}
@@ -210,19 +277,69 @@
 
         <!-- Publish/subscribe commands -->
         <div class="mt-6 border-t border-gray-800 pt-4">
-          <h3 class="text-sm font-medium text-gray-400 mb-3">Quick Start</h3>
-          <div class="space-y-2">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-medium text-gray-400">Quick Start</h3>
+            <!-- Host URL input -->
+            <div class="flex items-center gap-2">
+              <label for="hostUrl" class="text-xs text-gray-500 whitespace-nowrap">Host URL</label>
+              <input
+                id="hostUrl"
+                class="input text-xs py-1 px-2 w-44"
+                bind:value={hostInput}
+                on:blur={saveHostUrl}
+                on:keydown={(e) => e.key === 'Enter' && saveHostUrl()}
+                placeholder="e.g. 212.104.141.39"
+              />
+            </div>
+          </div>
+          <div class="space-y-3">
             <div>
               <div class="text-xs text-gray-500 mb-1">Publish</div>
-              <code class="block bg-gray-950 rounded px-3 py-2 text-xs text-green-400 font-mono overflow-x-auto">
-                ffmpeg -re -i input.ts -c copy -f mpegts "srt://&lt;host&gt;:9710?streamid=#!::m=publish,r={stream.name}{stream.key_length > 0 ? '&passphrase=<pass>' : ''}"
-              </code>
+              <div class="flex items-start gap-2">
+                <code class="flex-1 block bg-gray-950 rounded px-3 py-2 text-xs text-green-400 font-mono overflow-x-auto">
+                  {publishCmd}
+                </code>
+                <button
+                  class="btn-ghost text-xs shrink-0 px-3 py-2"
+                  on:click={() => copyText(publishCmd, 'publish')}
+                  title="Copy publish command"
+                >
+                  {#if copiedPublish}
+                    <!-- checkmark -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  {:else}
+                    <!-- clipboard -->
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  {/if}
+                </button>
+              </div>
             </div>
             <div>
               <div class="text-xs text-gray-500 mb-1">Subscribe</div>
-              <code class="block bg-gray-950 rounded px-3 py-2 text-xs text-blue-400 font-mono overflow-x-auto">
-                ffplay "srt://&lt;host&gt;:9710?streamid=#!::m=request,r={stream.name}{stream.key_length > 0 ? '&passphrase=<pass>' : ''}"
-              </code>
+              <div class="flex items-start gap-2">
+                <code class="flex-1 block bg-gray-950 rounded px-3 py-2 text-xs text-blue-400 font-mono overflow-x-auto">
+                  {subscribeCmd}
+                </code>
+                <button
+                  class="btn-ghost text-xs shrink-0 px-3 py-2"
+                  on:click={() => copyText(subscribeCmd, 'subscribe')}
+                  title="Copy subscribe command"
+                >
+                  {#if copiedSubscribe}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  {:else}
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  {/if}
+                </button>
+              </div>
             </div>
           </div>
         </div>

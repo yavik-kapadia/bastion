@@ -37,15 +37,16 @@ type Server struct {
 	prom       *metrics.Prom
 	hub        *ws.Hub
 	frontend   http.Handler // serves the embedded SPA; nil = no frontend
-	encKey     []byte // AES-256 key for passphrase encryption; nil = disabled
+	encKey     []byte       // AES-256 key for passphrase encryption; nil = disabled
+	srtAddr    string       // SRT listener address, used for thumbnail frame grabs
 	httpServer *http.Server
 }
 
 // NewServer constructs an API Server.
 // frontendFS is an optional fs.FS containing the built SvelteKit static files.
 // Pass nil to disable the dashboard (API-only mode).
-func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string) (*Server, error) {
-	s := &Server{db: database, relay: r, prom: p, hub: hub}
+func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string) (*Server, error) {
+	s := &Server{db: database, relay: r, prom: p, hub: hub, srtAddr: srtAddr}
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
 	}
@@ -106,6 +107,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 
 		r.Get("/api/v1/streams", s.listStreams)
 		r.Get("/api/v1/streams/{name}", s.getStream)
+		r.Get("/api/v1/streams/{name}/thumbnail", s.streamThumbnail)
 
 		r.Get("/api/v1/metrics/global", s.globalMetrics)
 		r.Get("/api/v1/ws", ws.Handler(s.hub))
