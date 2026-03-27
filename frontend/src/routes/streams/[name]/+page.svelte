@@ -67,7 +67,19 @@
   }
 
   async function copyText(text: string, which: 'publish' | 'subscribe') {
-    await navigator.clipboard.writeText(text);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for non-HTTPS contexts (e.g. HTTP over VPN)
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
     if (which === 'publish') {
       copiedPublish = true;
       setTimeout(() => (copiedPublish = false), 2000);
