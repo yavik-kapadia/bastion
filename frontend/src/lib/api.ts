@@ -8,6 +8,7 @@ export interface Stream {
   max_subscribers: number;
   allowed_publishers: string[];
   enabled: boolean;
+  passphrase?: string;
   has_publisher: boolean;
   subscriber_count: number;
   created_at: string;
@@ -49,10 +50,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined
   });
-  if (res.status === 401) {
-    throw new AuthError('session expired');
-  }
   const json = await res.json();
+  if (res.status === 401) {
+    throw new AuthError(json.error ?? 'session expired');
+  }
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json.data as T;
 }
@@ -79,7 +80,8 @@ export const api = {
   logout: () => request<{ status: string }>('POST', '/auth/logout'),
 
   listStreams: () => request<Stream[]>('GET', '/streams'),
-  getStream: (name: string) => request<Stream>('GET', `/streams/${name}`),
+  getStream: (name: string, reveal = false) =>
+    request<Stream>('GET', `/streams/${name}${reveal ? '?reveal=true' : ''}`),
   createStream: (p: StreamPayload) => request<Stream>('POST', '/streams', p),
   updateStream: (name: string, p: Partial<StreamPayload>) =>
     request<Stream>('PUT', `/streams/${name}`, p),

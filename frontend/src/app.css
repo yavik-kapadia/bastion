@@ -1,3 +1,28 @@
+@font-face {
+  font-family: 'Aileron';
+  src: url('/fonts/Aileron-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aileron';
+  src: url('/fonts/Aileron-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aileron';
+  src: url('/fonts/Aileron-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Aileron';
+  src: url('/fonts/Aileron-Heavy.otf') format('opentype');
+  font-weight: 800;
+  font-display: swap;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -13,13 +38,14 @@
     @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
   }
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer;
+    @apply px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500;
   }
   .btn-primary {
     @apply btn bg-sky-600 hover:bg-sky-500 text-white;
   }
   .btn-danger {
-    @apply btn bg-red-700 hover:bg-red-600 text-white;
+    @apply btn bg-transparent border border-red-800 text-red-400 hover:bg-red-700 hover:text-white hover:border-red-700;
   }
   .btn-ghost {
     @apply btn bg-transparent hover:bg-gray-800 text-gray-300;

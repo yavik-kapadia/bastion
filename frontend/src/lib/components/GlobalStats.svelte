@@ -11,9 +11,9 @@
     { label: 'Subscribers', value: metrics?.active_subscribers ?? '—' },
     { label: 'Dashboard Users', value: metrics?.dashboard_clients ?? '—' }
   ] as stat}
-    <div class="card text-center">
-      <div class="text-2xl font-bold text-sky-400">{stat.value}</div>
-      <div class="text-xs text-gray-500 mt-1">{stat.label}</div>
+    <div class="card text-center py-3">
+      <div class="text-xl font-bold text-sky-400">{stat.value}</div>
+      <div class="text-xs text-gray-500 mt-0.5">{stat.label}</div>
     </div>
   {/each}
 </div>

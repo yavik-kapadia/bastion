@@ -16,7 +16,7 @@
   let keyLength = initial.key_length ?? 0;
 
   function generatePassphrase() {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_~.';
     const arr = new Uint8Array(24);
     crypto.getRandomValues(arr);
     passphrase = Array.from(arr, (b) => chars[b % chars.length]).join('');

@@ -119,7 +119,22 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	stream.Passphrase = ""
+	// Reveal decrypted passphrase if ?reveal=true and user is manager+.
+	if r.URL.Query().Get("reveal") == "true" {
+		u := userFromCtx(r.Context())
+		if u != nil && (u.Role == model.RoleManager || u.Role == model.RoleAdmin) && stream.Passphrase != "" {
+			plain, err := s.decryptPassphrase(stream.Passphrase)
+			if err == nil {
+				stream.Passphrase = plain
+			} else {
+				stream.Passphrase = ""
+			}
+		} else {
+			stream.Passphrase = ""
+		}
+	} else {
+		stream.Passphrase = ""
+	}
 	// Merge live relay stats so the detail page has the same has_publisher /
 	// subscriber_count fields as the list endpoint.
 	type streamView struct {
