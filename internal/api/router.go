@@ -89,21 +89,24 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{corsOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Requested-With"},
 		AllowCredentials: true,
 	}))
 
 	// Public endpoints.
 	r.Get("/health", healthHandler)
 	r.Post("/api/v1/auth/login", loginLimiter.middleware(s.login))
-	r.Post("/api/v1/auth/bootstrap", s.bootstrap)
+	r.Post("/api/v1/auth/setup", s.setup)
 	r.Get("/api/v1/auth/setup-status", s.setupStatus)
 	r.Get("/metrics", promhttp.HandlerFor(s.prom.Registry, promhttp.HandlerOpts{}).ServeHTTP)
 
 	// Viewer+ endpoints (any authenticated user).
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
+		r.Use(csrfProtect)
 
+		r.Get("/api/v1/auth/me", s.me)
+		r.Post("/api/v1/auth/logout", s.logout)
 		r.Post("/api/v1/auth/api-keys", s.createAPIKey)
 
 		r.Get("/api/v1/streams", s.listStreams)
@@ -117,6 +120,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	// Manager+ endpoints (manager or admin).
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireManager)
+		r.Use(csrfProtect)
 
 		r.Post("/api/v1/streams", s.createStream)
 		r.Put("/api/v1/streams/{name}", s.updateStream)
@@ -126,6 +130,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	// Admin-only endpoints.
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAdmin)
+		r.Use(csrfProtect)
 
 		r.Get("/api/v1/users", s.listUsers)
 		r.Post("/api/v1/users", s.createUser)
