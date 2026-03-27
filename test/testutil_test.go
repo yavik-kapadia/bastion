@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yavik14/bastion/internal/api"
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/metrics"
-	"github.com/yavik14/bastion/internal/model"
-	"github.com/yavik14/bastion/internal/relay"
-	"github.com/yavik14/bastion/internal/ws"
+	"github.com/yavik-kapadia/bastion/internal/api"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/metrics"
+	"github.com/yavik-kapadia/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/ws"
 )
 
 // testServer bundles all Bastion components for use in integration tests.

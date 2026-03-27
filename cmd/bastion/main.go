@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/yavik14/bastion/internal/api"
-	"github.com/yavik14/bastion/internal/auth"
-	"github.com/yavik14/bastion/internal/config"
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/metrics"
-	"github.com/yavik14/bastion/internal/relay"
-	"github.com/yavik14/bastion/internal/ws"
+	"github.com/yavik-kapadia/bastion/internal/api"
+	"github.com/yavik-kapadia/bastion/internal/auth"
+	"github.com/yavik-kapadia/bastion/internal/config"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/metrics"
+	"github.com/yavik-kapadia/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/ws"
 )
 
 var version = "dev"

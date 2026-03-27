@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 type contextKey string

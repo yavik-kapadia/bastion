@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/yavik14/bastion/internal/crypto"
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/crypto"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/relay"
 )
 
 // StreamStatsGetter is the relay subset used to enforce subscriber caps.

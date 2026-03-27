@@ -17,11 +17,11 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/yavik14/bastion/internal/crypto"
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/metrics"
-	"github.com/yavik14/bastion/internal/relay"
-	"github.com/yavik14/bastion/internal/ws"
+	"github.com/yavik-kapadia/bastion/internal/crypto"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/metrics"
+	"github.com/yavik-kapadia/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/ws"
 )
 
 // RelayReader is the relay.Relay subset needed by the API.

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/yavik14/bastion/internal/relay"
-	"github.com/yavik14/bastion/internal/ws"
+	"github.com/yavik-kapadia/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/ws"
 )
 
 // RelaySnapshot is the relay interface subset needed by the collector.

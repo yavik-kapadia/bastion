@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 // StreamRepo provides CRUD operations for stream configurations.
