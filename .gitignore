@@ -30,6 +30,9 @@ cmd/bastion/frontend/
 .idea/
 .vscode/
 
+# gstack
+.gstack/
+
 # Secrets / keys
 *.pem
 *.key
