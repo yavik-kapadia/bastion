@@ -10,10 +10,38 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        id: version
+        run: |
+          OLD=$(cat VERSION)
+          MAJOR=$(echo $OLD | cut -d. -f1)
+          MINOR=$(echo $OLD | cut -d. -f2)
+          PATCH=$(echo $OLD | cut -d. -f3)
+          NEW="$MAJOR.$MINOR.$((PATCH + 1))"
+          echo "$NEW" > VERSION
+          echo "version=$NEW" >> $GITHUB_OUTPUT
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "chore: bump version to $NEW [skip ci]"
+          git tag "v$NEW"
+          git push origin main --follow-tags
+
+      - name: Set version for tag builds
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        id: tag_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
@@ -29,8 +57,7 @@ jobs:
           images: yavik/bastion
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.version.outputs.version || steps.tag_version.outputs.version }},enable=${{ steps.version.outputs.version != '' || steps.tag_version.outputs.version != '' }}
             type=sha,prefix=sha-,format=short
 
       - name: Set up Docker Buildx
