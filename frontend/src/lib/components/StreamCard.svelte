@@ -21,9 +21,9 @@
 <a href="/streams/{stream.name}" class="card hover:border-gray-700 transition-colors block group">
   <div class="flex items-start justify-between mb-3">
     <div>
-      <h3 class="font-semibold text-gray-100 group-hover:text-sky-400 transition-colors">
+      <h2 class="font-semibold text-base text-gray-100 group-hover:text-sky-400 transition-colors">
         {stream.name}
-      </h3>
+      </h2>
       {#if stream.description}
         <p class="text-xs text-gray-500 mt-0.5 truncate max-w-[200px]">{stream.description}</p>
       {/if}
