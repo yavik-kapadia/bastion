@@ -49,10 +49,10 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined
   });
-  if (res.status === 401) {
-    throw new AuthError('session expired');
-  }
   const json = await res.json();
+  if (res.status === 401) {
+    throw new AuthError(json.error ?? 'session expired');
+  }
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json.data as T;
 }
