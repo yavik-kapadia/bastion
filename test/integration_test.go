@@ -175,13 +175,13 @@ func mustLogin(t *testing.T, baseURL, user, pass string) string {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("login failed: %d", resp.StatusCode)
 	}
-	var r struct {
-		Data struct {
-			Token string `json:"token"`
-		} `json:"data"`
+	for _, c := range resp.Cookies() {
+		if c.Name == "bastion_session" {
+			return c.Value
+		}
 	}
-	json.NewDecoder(resp.Body).Decode(&r)
-	return r.Data.Token
+	t.Fatal("login: no bastion_session cookie in response")
+	return ""
 }
 
 func mustDo(t *testing.T, method, url, token string, body any) *http.Response {

@@ -1,21 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { isAdmin, auth } from '$lib/stores/auth';
+  import { invalidateAll } from '$app/navigation';
+  import { getAuth } from '$lib/stores/auth.svelte';
   import { api } from '$lib/api';
-  import type { User } from '$lib/api';
 
-  let users: User[] = [];
-  let loading = true;
-  let error = '';
+  let { data } = $props();
+  let users = $derived(data.users);
 
-  // Create form
-  let newUsername = '';
-  let newPassword = '';
-  let newRole = 'viewer';
-  let creating = false;
-  let createError = '';
-  let createSuccess = '';
+  let newUsername = $state('');
+  let newPassword = $state('');
+  let newRole = $state('viewer');
+  let creating = $state(false);
+  let createError = $state('');
+  let createSuccess = $state('');
 
   const roles = [
     { value: 'viewer',  label: 'Viewer',  desc: 'Read-only access' },
@@ -23,22 +19,7 @@
     { value: 'admin',   label: 'Admin',   desc: 'Full access including user management' },
   ];
 
-  onMount(async () => {
-    if (!$isAdmin) { goto('/'); return; }
-    await loadUsers();
-  });
-
-  async function loadUsers() {
-    loading = true;
-    error = '';
-    try {
-      users = await api.listUsers();
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      loading = false;
-    }
-  }
+  const auth = getAuth();
 
   async function createUser() {
     createError = '';
@@ -52,22 +33,22 @@
       newUsername = '';
       newPassword = '';
       newRole = 'viewer';
-      await loadUsers();
-    } catch (e: any) {
-      createError = e.message;
+      await invalidateAll();
+    } catch (e: unknown) {
+      createError = e instanceof Error ? e.message : 'Create failed';
     } finally {
       creating = false;
     }
   }
 
   async function deleteUser(id: string, username: string) {
-    if (id === $auth?.userId) { alert("You can't delete your own account."); return; }
+    if (id === auth?.user_id) { alert("You can't delete your own account."); return; }
     if (!confirm(`Delete user "${username}"?`)) return;
     try {
       await api.deleteUser(id);
-      await loadUsers();
-    } catch (e: any) {
-      alert(e.message);
+      await invalidateAll();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Delete failed');
     }
   }
 
@@ -78,7 +59,7 @@
   };
 </script>
 
-<svelte:head><title>Users · Bastion</title></svelte:head>
+<svelte:head><title>Users — Bastion</title></svelte:head>
 
 <div class="space-y-8">
   <div class="flex items-center justify-between">
@@ -88,7 +69,6 @@
     </div>
   </div>
 
-  <!-- Create user -->
   <div class="card">
     <h2 class="text-sm font-semibold text-white mb-4">Add user</h2>
 
@@ -99,36 +79,31 @@
       <p class="text-sm text-green-400 bg-green-500/10 border border-green-500/20 rounded-lg px-3 py-2 mb-4">{createSuccess}</p>
     {/if}
 
-    <form on:submit|preventDefault={createUser} class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+    <form onsubmit={(e) => { e.preventDefault(); createUser(); }} class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
       <div>
-        <label class="block text-xs font-medium text-gray-400 mb-1">Username</label>
-        <input type="text" bind:value={newUsername} class="input w-full" placeholder="jane" required />
+        <label class="block text-xs font-medium text-gray-400 mb-1" for="newUsername">Username</label>
+        <input id="newUsername" type="text" bind:value={newUsername} class="input w-full" placeholder="jane" required />
       </div>
       <div>
-        <label class="block text-xs font-medium text-gray-400 mb-1">Password</label>
-        <input type="password" bind:value={newPassword} class="input w-full" placeholder="Min 8 chars" required />
+        <label class="block text-xs font-medium text-gray-400 mb-1" for="newPassword">Password</label>
+        <input id="newPassword" type="password" bind:value={newPassword} class="input w-full" placeholder="Min 8 chars" required />
       </div>
       <div>
-        <label class="block text-xs font-medium text-gray-400 mb-1">Role</label>
-        <select bind:value={newRole} class="input w-full">
+        <label class="block text-xs font-medium text-gray-400 mb-1" for="newRole">Role</label>
+        <select id="newRole" bind:value={newRole} class="input w-full">
           {#each roles as r}
             <option value={r.value}>{r.label} — {r.desc}</option>
           {/each}
         </select>
       </div>
       <button type="submit" class="btn-primary" disabled={creating}>
-        {creating ? 'Creating…' : 'Create user'}
+        {creating ? 'Creating...' : 'Create user'}
       </button>
     </form>
   </div>
 
-  <!-- User list -->
   <div class="card p-0 overflow-hidden">
-    {#if loading}
-      <div class="p-8 text-center text-gray-500 text-sm">Loading…</div>
-    {:else if error}
-      <div class="p-8 text-center text-red-400 text-sm">{error}</div>
-    {:else if users.length === 0}
+    {#if users.length === 0}
       <div class="p-8 text-center text-gray-500 text-sm">No users yet.</div>
     {:else}
       <table class="w-full text-sm">
@@ -145,7 +120,7 @@
             <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
               <td class="px-4 py-3 text-gray-200 font-medium">
                 {user.username}
-                {#if user.id === $auth?.userId}
+                {#if user.id === auth?.user_id}
                   <span class="ml-2 text-xs text-gray-500">(you)</span>
                 {/if}
               </td>
@@ -155,12 +130,12 @@
                 </span>
               </td>
               <td class="px-4 py-3 text-gray-500 text-xs">
-                {new Date(user.created_at).toLocaleDateString()}
+                {user.created_at ? new Date(user.created_at).toLocaleDateString() : ''}
               </td>
               <td class="px-4 py-3 text-right">
-                {#if user.id !== $auth?.userId}
+                {#if user.id !== auth?.user_id}
                   <button
-                    on:click={() => deleteUser(user.id, user.username)}
+                    onclick={() => deleteUser(user.id, user.username)}
                     class="text-xs text-red-400 hover:text-red-300 transition-colors"
                   >
                     Delete

@@ -10,7 +10,11 @@ import (
 
 type contextKey string
 
-const ctxUser contextKey = "user"
+const (
+	ctxUser    contextKey = "user"
+	ctxViaCookie contextKey = "via_cookie"
+	cookieName             = "bastion_session"
+)
 
 // userFromCtx retrieves the authenticated user from the request context.
 func userFromCtx(ctx context.Context) *model.User {
@@ -18,10 +22,16 @@ func userFromCtx(ctx context.Context) *model.User {
 	return u
 }
 
-// requireAuth is middleware that validates Bearer API keys.
+// authViaCookie returns true if the request was authenticated via cookie.
+func authViaCookie(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxViaCookie).(bool)
+	return v
+}
+
+// requireAuth is middleware that validates auth via cookie, Bearer header, or query param.
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key := bearerToken(r)
+		key, viaCookie := s.extractToken(r)
 		if key == "" {
 			respondError(w, http.StatusUnauthorized, "missing authorization")
 			return
@@ -32,7 +42,24 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxUser, u)
+		ctx = context.WithValue(ctx, ctxViaCookie, viaCookie)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// csrfProtect rejects state-changing requests authenticated via cookie that lack
+// the X-Requested-With header. Bearer-token requests are exempt (external API consumers).
+func csrfProtect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if authViaCookie(r.Context()) && r.Header.Get("X-Requested-With") == "" {
+			respondError(w, http.StatusForbidden, "CSRF validation failed")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -60,12 +87,43 @@ func (s *Server) requireAdmin(next http.Handler) http.Handler {
 	}))
 }
 
-// bearerToken extracts the token from "Authorization: Bearer <token>" or the
-// "token" query parameter (used by WebSocket clients which cannot set headers).
-func bearerToken(r *http.Request) string {
+// extractToken returns the API key and whether it came from a cookie.
+// Priority: cookie > Authorization header > query param.
+func (s *Server) extractToken(r *http.Request) (string, bool) {
+	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
+		return c.Value, true
+	}
 	h := r.Header.Get("Authorization")
 	if strings.HasPrefix(h, "Bearer ") {
-		return strings.TrimPrefix(h, "Bearer ")
+		return strings.TrimPrefix(h, "Bearer "), false
 	}
-	return r.URL.Query().Get("token")
+	if q := r.URL.Query().Get("token"); q != "" {
+		return q, false
+	}
+	return "", false
+}
+
+// setSessionCookie writes an HttpOnly session cookie with the API key.
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+	})
+}
+
+// clearSessionCookie expires the session cookie.
+func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		MaxAge:   -1,
+	})
 }

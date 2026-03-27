@@ -1,34 +1,37 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
-  import { auth } from '$lib/stores/auth';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { setAuth } from '$lib/stores/auth.svelte';
   import { api } from '$lib/api';
+  import { connectWS } from '$lib/ws';
 
-  let username = '';
-  let password = '';
-  let confirm = '';
-  let error = '';
-  let loading = false;
+  let username = $state('');
+  let password = $state('');
+  let confirmPw = $state('');
+  let error = $state('');
+  let loading = $state(false);
 
   async function handleSubmit() {
     error = '';
     if (!username || !password) { error = 'Username and password are required.'; return; }
-    if (password !== confirm) { error = 'Passwords do not match.'; return; }
+    if (password !== confirmPw) { error = 'Passwords do not match.'; return; }
     if (password.length < 8) { error = 'Password must be at least 8 characters.'; return; }
 
     loading = true;
     try {
-      const res = await api.bootstrap(username, password);
-      auth.login({ token: res.token, userId: res.user_id, username: res.username, role: res.role });
+      const res = await api.setup(username, password);
+      setAuth(res);
+      connectWS();
+      await invalidateAll();
       goto('/');
-    } catch (e: any) {
-      error = e.message ?? 'Setup failed.';
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : 'Setup failed.';
     } finally {
       loading = false;
     }
   }
 </script>
 
-<svelte:head><title>Setup · Bastion</title></svelte:head>
+<svelte:head><title>Setup — Bastion</title></svelte:head>
 
 <div class="min-h-screen bg-gray-950 flex items-center justify-center px-4">
   <div class="w-full max-w-sm">
@@ -43,52 +46,25 @@
       <p class="text-sm text-gray-400 mt-1">Create your admin account to get started.</p>
     </div>
 
-    <form on:submit|preventDefault={handleSubmit} class="card space-y-4">
+    <form onsubmit={(e) => { e.preventDefault(); handleSubmit(); }} class="card space-y-4">
       {#if error}
         <p class="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
       {/if}
 
       <div>
         <label class="block text-xs font-medium text-gray-400 mb-1" for="username">Username</label>
-        <input
-          id="username"
-          type="text"
-          bind:value={username}
-          class="input w-full"
-          placeholder="admin"
-          autocomplete="username"
-          required
-        />
+        <input id="username" type="text" bind:value={username} class="input w-full" placeholder="admin" autocomplete="username" required />
       </div>
-
       <div>
         <label class="block text-xs font-medium text-gray-400 mb-1" for="password">Password</label>
-        <input
-          id="password"
-          type="password"
-          bind:value={password}
-          class="input w-full"
-          placeholder="At least 8 characters"
-          autocomplete="new-password"
-          required
-        />
+        <input id="password" type="password" bind:value={password} class="input w-full" placeholder="At least 8 characters" autocomplete="new-password" required />
       </div>
-
       <div>
         <label class="block text-xs font-medium text-gray-400 mb-1" for="confirm">Confirm password</label>
-        <input
-          id="confirm"
-          type="password"
-          bind:value={confirm}
-          class="input w-full"
-          placeholder="Repeat password"
-          autocomplete="new-password"
-          required
-        />
+        <input id="confirm" type="password" bind:value={confirmPw} class="input w-full" placeholder="Repeat password" autocomplete="new-password" required />
       </div>
-
       <button type="submit" class="btn-primary w-full" disabled={loading}>
-        {loading ? 'Creating account…' : 'Create admin account'}
+        {loading ? 'Creating account...' : 'Create admin account'}
       </button>
     </form>
   </div>

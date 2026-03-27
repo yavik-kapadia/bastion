@@ -28,43 +28,55 @@ export interface User {
   id: string;
   username: string;
   role: string;
+  created_at?: string;
 }
 
-export interface AuthResponse {
-  token: string;
+export interface AuthUser {
   user_id: string;
   username: string;
   role: string;
   public_host?: string;
 }
 
-function token(): string {
-  return localStorage.getItem('token') ?? '';
-}
-
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (method !== 'GET' && method !== 'HEAD') {
+    headers['X-Requested-With'] = 'XMLHttpRequest';
+  }
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token()}`
-    },
+    headers,
+    credentials: 'include',
     body: body ? JSON.stringify(body) : undefined
   });
+  if (res.status === 401) {
+    throw new AuthError('session expired');
+  }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json.data as T;
+}
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
 }
 
 export const api = {
   setupStatus: () =>
     request<{ needs_setup: boolean }>('GET', '/auth/setup-status'),
 
-  bootstrap: (username: string, password: string) =>
-    request<AuthResponse>('POST', '/auth/bootstrap', { username, password }),
+  setup: (username: string, password: string) =>
+    request<AuthUser>('POST', '/auth/setup', { username, password }),
 
   login: (username: string, password: string) =>
-    request<AuthResponse>('POST', '/auth/login', { username, password }),
+    request<AuthUser>('POST', '/auth/login', { username, password }),
+
+  me: () => request<AuthUser>('GET', '/auth/me'),
+
+  logout: () => request<{ status: string }>('POST', '/auth/logout'),
 
   listStreams: () => request<Stream[]>('GET', '/streams'),
   getStream: (name: string) => request<Stream>('GET', `/streams/${name}`),
@@ -76,14 +88,5 @@ export const api = {
   listUsers: () => request<User[]>('GET', '/users'),
   createUser: (username: string, password: string, role: string) =>
     request<User>('POST', '/users', { username, password, role }),
-  deleteUser: (id: string) => request<unknown>('DELETE', `/users/${id}`),
-
-  createAPIKey: (name: string) =>
-    request<{ key: string; note: string }>('POST', '/auth/api-keys', { name }),
-
-  globalMetrics: () =>
-    request<{ active_streams: number; active_publishers: number; active_subscribers: number }>(
-      'GET',
-      '/metrics/global'
-    )
+  deleteUser: (id: string) => request<unknown>('DELETE', `/users/${id}`)
 };

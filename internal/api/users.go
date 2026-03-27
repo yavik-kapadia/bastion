@@ -15,16 +15,16 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// bootstrap POST /api/v1/auth/bootstrap — creates the first admin user.
+// setup POST /api/v1/auth/setup — creates the first admin user.
 // Returns 409 if any users already exist so it cannot be used after initial setup.
-func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	n, err := s.db.Users.Count()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	if n > 0 {
-		respondError(w, http.StatusConflict, "already bootstrapped — use /api/v1/auth/login")
+		respondError(w, http.StatusConflict, "already set up — use /api/v1/auth/login")
 		return
 	}
 	var req struct {
@@ -44,16 +44,16 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to create admin")
 		return
 	}
-	rawKey, err := s.db.Users.CreateAPIKey(newID(), id, "bootstrap-session")
+	rawKey, err := s.db.Users.CreateAPIKey(newID(), id, "setup-session")
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to create session key")
 		return
 	}
+	setSessionCookie(w, r, rawKey)
 	respond(w, http.StatusCreated, map[string]any{
-		"token":       rawKey,
-		"username":    req.Username,
-		"role":        "admin",
-		"public_host": s.publicHost,
+		"user_id":  id,
+		"username": req.Username,
+		"role":     "admin",
 	})
 }
 
@@ -75,13 +75,29 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "could not create session key")
 		return
 	}
+	setSessionCookie(w, r, rawKey)
 	respond(w, http.StatusOK, map[string]any{
-		"token":       rawKey,
+		"user_id":  u.ID,
+		"username": u.Username,
+		"role":     u.Role,
+	})
+}
+
+// me GET /api/v1/auth/me — returns the current user's info from their session cookie or token.
+func (s *Server) me(w http.ResponseWriter, r *http.Request) {
+	u := userFromCtx(r.Context())
+	respond(w, http.StatusOK, map[string]any{
 		"user_id":     u.ID,
 		"username":    u.Username,
 		"role":        u.Role,
 		"public_host": s.publicHost,
 	})
+}
+
+// logout POST /api/v1/auth/logout — clears the session cookie.
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	clearSessionCookie(w, r)
+	respond(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 
 // createAPIKey POST /api/v1/auth/api-keys
