@@ -2,10 +2,9 @@
   import { invalidateAll } from '$app/navigation';
   import { getAuth } from '$lib/stores/auth.svelte';
   import { api } from '$lib/api';
-  import type { User } from '$lib/api';
 
   let { data } = $props();
-  let users: User[] = $state(data.users);
+  let users = $derived(data.users);
 
   let newUsername = $state('');
   let newPassword = $state('');
@@ -34,7 +33,7 @@
       newUsername = '';
       newPassword = '';
       newRole = 'viewer';
-      users = await api.listUsers();
+      await invalidateAll();
     } catch (e: unknown) {
       createError = e instanceof Error ? e.message : 'Create failed';
     } finally {
@@ -47,7 +46,7 @@
     if (!confirm(`Delete user "${username}"?`)) return;
     try {
       await api.deleteUser(id);
-      users = await api.listUsers();
+      await invalidateAll();
     } catch (e: unknown) {
       alert(e instanceof Error ? e.message : 'Delete failed');
     }

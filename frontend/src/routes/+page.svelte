@@ -1,20 +1,19 @@
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import { metricsStore } from '$lib/ws';
-  import { api } from '$lib/api';
   import StreamCard from '$lib/components/StreamCard.svelte';
   import GlobalStats from '$lib/components/GlobalStats.svelte';
-  import type { Stream } from '$lib/api';
 
   let { data } = $props();
-  let streams: Stream[] = $state(data.streams);
+  let streams = $derived(data.streams);
 
-  // Reactively update stream list when metrics arrive (add new streams dynamically).
+  // Refresh stream list when metrics show a stream we don't know about.
   $effect(() => {
     if ($metricsStore) {
       const knownNames = new Set(streams.map((s) => s.name));
       const metricNames = Object.keys($metricsStore.streams);
       if (metricNames.some((n) => !knownNames.has(n))) {
-        api.listStreams().then((s) => { streams = s; }).catch(() => {});
+        invalidateAll();
       }
     }
   });

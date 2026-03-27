@@ -11,7 +11,7 @@
   import type { Stream, StreamPayload } from '$lib/api';
 
   let { data } = $props();
-  let stream: Stream = $state(data.stream);
+  let stream = $derived(data.stream);
   let editing = $state(false);
   let updateLoading = $state(false);
   let updateError = $state('');
@@ -81,8 +81,9 @@
     updateLoading = true;
     updateError = '';
     try {
-      stream = await api.updateStream(name, e.detail);
+      await api.updateStream(name, e.detail);
       editing = false;
+      await invalidateAll();
     } catch (err: unknown) {
       updateError = err instanceof Error ? err.message : 'Update failed';
     } finally {
