@@ -7,7 +7,6 @@ export interface StreamMetrics {
   bytes_relayed: number;
   packets_dropped: number;
   health: 'green' | 'yellow' | 'red';
-  // SRT protocol stats
   rtt_ms: number;
   send_loss_rate: number;
   recv_bitrate_mbps: number;
@@ -36,12 +35,14 @@ let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
 let stopped = false;
 
-export function connectWS(token: string) {
+// connectWS opens a WebSocket connection. The session cookie is sent
+// automatically by the browser on the WS upgrade request.
+export function connectWS() {
   stopped = false;
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${protocol}://${location.host}/api/v1/ws`;
 
-  ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`);
+  ws = new WebSocket(url);
 
   ws.onopen = () => {
     reconnectDelay = 1000;
@@ -61,7 +62,7 @@ export function connectWS(token: string) {
   ws.onclose = () => {
     ws = null;
     if (!stopped) {
-      setTimeout(() => connectWS(token), reconnectDelay);
+      setTimeout(() => connectWS(), reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
     }
   };
