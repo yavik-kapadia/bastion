@@ -34,7 +34,6 @@
 
   let hasPass = $derived(stream?.key_length && stream.key_length > 0);
   let displaySuffix = $derived(hasPass ? '&passphrase=••••••••' : '');
-  let copySuffix = $derived(hasPass ? `&passphrase=${stream.passphrase || '<pass>'}` : '');
 
   let publishDisplay = $derived(
     `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${displaySuffix}"`
@@ -42,12 +41,23 @@
   let subscribeDisplay = $derived(
     `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${displaySuffix}"`
   );
-  let publishCopy = $derived(
-    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${copySuffix}"`
-  );
-  let subscribeCopy = $derived(
-    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${copySuffix}"`
-  );
+
+  // Fetch passphrase on demand and build the real command for clipboard
+  async function buildCopyCmd(mode: 'publish' | 'subscribe'): Promise<string> {
+    let passSuffix = '';
+    if (hasPass) {
+      try {
+        const revealed = await api.getStream(name, true);
+        passSuffix = `&passphrase=${revealed.passphrase || '<pass>'}`;
+      } catch {
+        passSuffix = '&passphrase=<pass>';
+      }
+    }
+    if (mode === 'publish') {
+      return `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${passSuffix}"`;
+    }
+    return `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${passSuffix}"`;
+  }
 
   function refreshThumbnail() {
     if (!hasPublisher) return;
@@ -76,11 +86,11 @@
     setHostUrl(hostInput);
   }
 
-  async function copyText(text: string, which: 'publish' | 'subscribe') {
+  async function copyCmd(which: 'publish' | 'subscribe') {
+    const text = await buildCopyCmd(which);
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // Fallback for non-HTTPS contexts (e.g. HTTP over VPN)
       const ta = document.createElement('textarea');
       ta.value = text;
       ta.style.position = 'fixed';
@@ -312,7 +322,7 @@
               </code>
               <button
                 class="btn-ghost text-xs shrink-0 px-3 py-2"
-                onclick={() => copyText(publishCopy, 'publish')}
+                onclick={() => copyCmd('publish')}
                 title="Copy publish command"
               >
                 {#if copiedPublish}
@@ -335,7 +345,7 @@
               </code>
               <button
                 class="btn-ghost text-xs shrink-0 px-3 py-2"
-                onclick={() => copyText(subscribeCopy, 'subscribe')}
+                onclick={() => copyCmd('subscribe')}
                 title="Copy subscribe command"
               >
                 {#if copiedSubscribe}
