@@ -32,16 +32,21 @@
 
   let host = $derived(resolvedHost() || '<host>');
 
-  let passphraseSuffix = $derived(
-    stream?.key_length && stream.key_length > 0
-      ? `&passphrase=${stream.passphrase || '<pass>'}`
-      : ''
+  let hasPass = $derived(stream?.key_length && stream.key_length > 0);
+  let displaySuffix = $derived(hasPass ? '&passphrase=••••••••' : '');
+  let copySuffix = $derived(hasPass ? `&passphrase=${stream.passphrase || '<pass>'}` : '');
+
+  let publishDisplay = $derived(
+    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${displaySuffix}"`
   );
-  let publishCmd = $derived(
-    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${passphraseSuffix}"`
+  let subscribeDisplay = $derived(
+    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${displaySuffix}"`
   );
-  let subscribeCmd = $derived(
-    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${passphraseSuffix}"`
+  let publishCopy = $derived(
+    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${copySuffix}"`
+  );
+  let subscribeCopy = $derived(
+    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${copySuffix}"`
   );
 
   function refreshThumbnail() {
@@ -303,11 +308,11 @@
             <div class="text-xs text-gray-500 mb-1">Publish</div>
             <div class="flex items-start gap-2">
               <code class="flex-1 block bg-gray-950 rounded px-3 py-2 text-xs text-green-400 font-mono overflow-x-auto">
-                {publishCmd}
+                {publishDisplay}
               </code>
               <button
                 class="btn-ghost text-xs shrink-0 px-3 py-2"
-                onclick={() => copyText(publishCmd, 'publish')}
+                onclick={() => copyText(publishCopy, 'publish')}
                 title="Copy publish command"
               >
                 {#if copiedPublish}
@@ -326,11 +331,11 @@
             <div class="text-xs text-gray-500 mb-1">Subscribe</div>
             <div class="flex items-start gap-2">
               <code class="flex-1 block bg-gray-950 rounded px-3 py-2 text-xs text-blue-400 font-mono overflow-x-auto">
-                {subscribeCmd}
+                {subscribeDisplay}
               </code>
               <button
                 class="btn-ghost text-xs shrink-0 px-3 py-2"
-                onclick={() => copyText(subscribeCmd, 'subscribe')}
+                onclick={() => copyText(subscribeCopy, 'subscribe')}
                 title="Copy subscribe command"
               >
                 {#if copiedSubscribe}
