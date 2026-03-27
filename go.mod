@@ -1,4 +1,4 @@
-module github.com/yavik14/bastion
+module github.com/yavik-kapadia/bastion
 
 go 1.26.1
 

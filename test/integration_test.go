@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 // TestAPIIntegration verifies the REST API works end-to-end against a live server.

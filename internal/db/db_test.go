@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 func openTestDB(t *testing.T) *DB {

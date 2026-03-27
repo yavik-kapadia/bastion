@@ -12,11 +12,11 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/metrics"
-	"github.com/yavik14/bastion/internal/model"
-	"github.com/yavik14/bastion/internal/relay"
-	"github.com/yavik14/bastion/internal/ws"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/metrics"
+	"github.com/yavik-kapadia/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/ws"
 )
 
 // fakeRelay is a stub RelayReader for tests.

@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 // validStreamName restricts stream names to safe characters only.

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yavik14/bastion/internal/db"
-	"github.com/yavik14/bastion/internal/model"
-	"github.com/yavik14/bastion/internal/relay"
+	"github.com/yavik-kapadia/bastion/internal/db"
+	"github.com/yavik-kapadia/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/relay"
 )
 
 func openDB(t *testing.T) *db.DB {

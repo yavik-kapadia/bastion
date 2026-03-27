@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/yavik14/bastion/internal/model"
+	"github.com/yavik-kapadia/bastion/internal/model"
 )
 
 // loginRequest is the body for POST /api/v1/auth/login.
