@@ -50,9 +50,10 @@ func (s *Server) bootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusCreated, map[string]any{
-		"token":    rawKey,
-		"username": req.Username,
-		"role":     "admin",
+		"token":       rawKey,
+		"username":    req.Username,
+		"role":        "admin",
+		"public_host": s.publicHost,
 	})
 }
 
@@ -75,10 +76,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{
-		"token":    rawKey,
-		"user_id":  u.ID,
-		"username": u.Username,
-		"role":     u.Role,
+		"token":       rawKey,
+		"user_id":     u.ID,
+		"username":    u.Username,
+		"role":        u.Role,
+		"public_host": s.publicHost,
 	})
 }
 

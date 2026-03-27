@@ -15,14 +15,20 @@ function createAuthStore() {
 
   return {
     subscribe,
-    login(state: AuthState) {
+    login(state: AuthState, publicHost?: string) {
       localStorage.setItem('auth', JSON.stringify(state));
       localStorage.setItem('token', state.token);
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('bastionPublicHost', publicHost ?? '');
+      }
       set(state);
     },
     logout() {
       localStorage.removeItem('auth');
       localStorage.removeItem('token');
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem('bastionPublicHost');
+      }
       set(null);
     }
   };

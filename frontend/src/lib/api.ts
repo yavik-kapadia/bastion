@@ -35,6 +35,7 @@ export interface AuthResponse {
   user_id: string;
   username: string;
   role: string;
+  public_host?: string;
 }
 
 function token(): string {
