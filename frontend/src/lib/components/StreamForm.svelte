@@ -12,7 +12,16 @@
   let name = initial.name ?? '';
   let description = initial.description ?? '';
   let passphrase = '';
+  let showPassphrase = false;
   let keyLength = initial.key_length ?? 0;
+
+  function generatePassphrase() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    const arr = new Uint8Array(24);
+    crypto.getRandomValues(arr);
+    passphrase = Array.from(arr, (b) => chars[b % chars.length]).join('');
+    showPassphrase = true;
+  }
   let maxSubscribers = initial.max_subscribers ?? 0;
   let allowedPublishers = (initial.allowed_publishers ?? []).join('\n');
   let enabled = initial.enabled ?? true;
@@ -67,15 +76,35 @@
         <label class="label" for="passphrase">
           Passphrase {keyLength > 0 ? '*' : '(optional)'}
         </label>
-        <input
-          id="passphrase"
-          class="input"
-          type="password"
-          bind:value={passphrase}
-          placeholder="min. 10 characters"
-          required={keyLength > 0}
-          minlength={keyLength > 0 ? 10 : undefined}
-        />
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <input
+              id="passphrase"
+              class="input pr-10 w-full"
+              type={showPassphrase ? 'text' : 'password'}
+              bind:value={passphrase}
+              placeholder="min. 10 characters"
+              required={keyLength > 0}
+              minlength={keyLength > 0 ? 10 : undefined}
+            />
+            <button
+              type="button"
+              class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-200"
+              on:click={() => (showPassphrase = !showPassphrase)}
+              title={showPassphrase ? 'Hide passphrase' : 'Show passphrase'}
+            >
+              {showPassphrase ? '🙈' : '👁'}
+            </button>
+          </div>
+          <button
+            type="button"
+            class="btn-ghost text-xs whitespace-nowrap"
+            on:click={generatePassphrase}
+            title="Generate random passphrase"
+          >
+            Generate
+          </button>
+        </div>
       </div>
     </div>
   </div>
