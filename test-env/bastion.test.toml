@@ -1,0 +1,26 @@
+# Bastion test-env config — used only by docker-compose.test.yml.
+# Distinct from bastion.toml so it can be edited freely without touching the
+# values shipped in the production image.
+
+[srt]
+listen_addr = ":9710"
+latency = "120ms"
+max_bandwidth = -1
+payload_size = 1316
+subscriber_buf_size = 512
+allow_unregistered_streams = true
+
+[api]
+listen_addr = ":8080"
+cors_origin = "*"
+jwt_secret = "test-env-jwt-secret-not-for-production-use"
+# 32 hex chars (16 bytes) → AES-128.
+encryption_key = "0123456789abcdef0123456789abcdef"
+public_host = "localhost"
+
+[database]
+path = "/data/bastion.db"
+
+[logging]
+level = "debug"
+format = "text"
