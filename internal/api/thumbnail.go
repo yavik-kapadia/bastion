@@ -38,15 +38,20 @@ func (s *Server) streamThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Write(png) //nolint:errcheck
 }
 
 // grabFrame runs ffmpeg against the local SRT listener to capture a single
-// frame as PNG. The SRT subscription created here is short-lived (~1s) but
-// does increment subscriberCount during its lifetime — the cache in front of
-// this function exists to keep that lifetime rare.
+// frame as JPEG. The SRT subscription is short-lived (~1s) but does increment
+// subscriberCount during its lifetime — the cache in front of this function
+// keeps that lifetime rare.
+//
+// We switched to JPEG + downscale from full-res PNG after ffmpeg 6.1.1 in
+// alpine 3.20 segfaulted encoding a 1920x1080@120fps stream to PNG. The
+// downscale + MJPEG path is more memory-friendly, faster, and avoids the
+// crashing code path; thumbnails don't need full resolution anyway.
 func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 	_, port, err := net.SplitHostPort(s.srtAddr)
 	if err != nil {
@@ -62,17 +67,21 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 		}
 	}
 
-	// Timeout sized for ~6s GOPs (a common upper bound from prosumer encoders)
-	// plus SRT handshake.
+	// 15s budget covers SRT handshake + the longest realistic GOP (4s at
+	// 30fps / 120-frame keyint, 2s at 60fps / 120-frame keyint).
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-loglevel", "error",
 		"-i", srtURL,
-		"-vframes", "1",
+		"-an",                     // ignore audio — saves work, avoids audio-codec edge cases
+		"-map", "0:v:0",           // first video stream only, in case of multiple
+		"-frames:v", "1",          // exactly one decoded frame
+		"-vf", "scale=480:-2",     // thumbnail-sized; -2 keeps aspect ratio, even height
 		"-f", "image2pipe",
-		"-vcodec", "png",
+		"-vcodec", "mjpeg",
+		"-q:v", "5",               // 1-31, lower = better; 5 is solid for a thumbnail
 		"-",
 	)
 
@@ -82,6 +91,9 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffmpeg: %w (%s)", err, stderr.String())
+	}
+	if stdout.Len() == 0 {
+		return nil, fmt.Errorf("ffmpeg produced no output (%s)", stderr.String())
 	}
 	return stdout.Bytes(), nil
 }
