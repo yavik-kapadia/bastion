@@ -63,16 +63,12 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 	}
 
 	// Timeout sized for ~6s GOPs (a common upper bound from prosumer encoders)
-	// plus SRT handshake. -skip_frame nokey tells the decoder to drop every
-	// P/B frame and emit only the next IDR — eliminates "non-existing PPS 0"
-	// noise from starting mid-GOP and grabs the first decodable frame as soon
-	// as a keyframe arrives.
+	// plus SRT handshake.
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-loglevel", "error",
-		"-skip_frame", "nokey",
 		"-i", srtURL,
 		"-vframes", "1",
 		"-f", "image2pipe",
