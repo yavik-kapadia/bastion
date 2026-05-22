@@ -45,6 +45,11 @@ type Stream struct {
 	// "this publisher has finished" without races. Reads must take s.mu.
 	pubDone chan struct{}
 
+	// publisherSessionID increments on every successful SetPublisher. External
+	// observers (e.g. the API media-info probe) cache results against this ID
+	// so they can detect when the publisher reconnected and refresh.
+	publisherSessionID atomic.Uint64
+
 	// Stats counters updated atomically.
 	bytesRelayed    atomic.Uint64
 	packetsDropped  atomic.Uint64
@@ -94,6 +99,7 @@ func (s *Stream) SetPublisher(ctx context.Context, conn srt.Conn) error {
 	s.pubState = pubActive
 	s.publisher = conn
 	s.pubDone = make(chan struct{})
+	s.publisherSessionID.Add(1)
 	ctx, s.cancel = context.WithCancel(ctx)
 	s.mu.Unlock()
 
@@ -182,13 +188,14 @@ type SRTStats struct {
 
 // StreamStats returns a snapshot of current stream statistics.
 type StreamStats struct {
-	Name            string
-	SubscriberCount int
-	BytesRelayed    uint64
-	PacketsDropped  uint64
-	HasPublisher    bool
-	CreatedAt       time.Time
-	SRT             SRTStats
+	Name               string
+	SubscriberCount    int
+	BytesRelayed       uint64
+	PacketsDropped     uint64
+	HasPublisher       bool
+	PublisherSessionID uint64 // 0 if no publisher has ever attached
+	CreatedAt          time.Time
+	SRT                SRTStats
 }
 
 func (s *Stream) Stats() StreamStats {
@@ -196,13 +203,14 @@ func (s *Stream) Stats() StreamStats {
 	hasPub := s.publisher != nil
 	s.mu.RUnlock()
 	return StreamStats{
-		Name:            s.name,
-		SubscriberCount: int(s.subscriberCount.Load()),
-		BytesRelayed:    s.bytesRelayed.Load(),
-		PacketsDropped:  s.packetsDropped.Load(),
-		HasPublisher:    hasPub,
-		CreatedAt:       s.createdAt,
-		SRT:             s.collectSRTStats(),
+		Name:               s.name,
+		SubscriberCount:    int(s.subscriberCount.Load()),
+		BytesRelayed:       s.bytesRelayed.Load(),
+		PacketsDropped:     s.packetsDropped.Load(),
+		HasPublisher:       hasPub,
+		PublisherSessionID: s.publisherSessionID.Load(),
+		CreatedAt:          s.createdAt,
+		SRT:                s.collectSRTStats(),
 	}
 }
 

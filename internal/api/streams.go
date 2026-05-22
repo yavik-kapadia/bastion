@@ -139,14 +139,16 @@ func (s *Server) getStream(w http.ResponseWriter, r *http.Request) {
 	// subscriber_count fields as the list endpoint.
 	type streamView struct {
 		*model.Stream
-		HasPublisher    bool `json:"has_publisher"`
-		SubscriberCount int  `json:"subscriber_count"`
+		HasPublisher    bool       `json:"has_publisher"`
+		SubscriberCount int        `json:"subscriber_count"`
+		MediaInfo       *MediaInfo `json:"media_info,omitempty"`
 	}
 	v := streamView{Stream: stream}
 	if stats, ok := s.relay.StreamStats(name); ok {
 		v.HasPublisher = stats.HasPublisher
 		v.SubscriberCount = stats.SubscriberCount
 	}
+	v.MediaInfo = s.mediaInfoCache.get(name)
 	respond(w, http.StatusOK, v)
 }
 
