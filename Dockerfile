@@ -1,12 +1,17 @@
 # ── Stage 1: Build frontend ────────────────────────────────────────────────────
 FROM node:22-alpine AS frontend-builder
 
+WORKDIR /app
+COPY VERSION ./VERSION
+
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ .
-RUN npm run build
+# VITE_BASTION_VERSION is read by the layout footer so the dashboard always
+# reports the same version as the running binary.
+RUN VITE_BASTION_VERSION=$(cat /app/VERSION) npm run build
 
 # ── Stage 2: Build Go binary ───────────────────────────────────────────────────
 FROM golang:1.26-alpine AS go-builder
