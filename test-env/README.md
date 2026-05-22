@@ -7,7 +7,7 @@ End-to-end smoke test environment for Bastion using Docker Compose.
 | Service     | Purpose                                                              |
 |-------------|----------------------------------------------------------------------|
 | `bastion`   | The published image `yavik/bastion:latest` on the standard ports.    |
-| `init`      | One-shot; bootstraps the admin user via `POST /api/v1/auth/setup`.   |
+| `init`      | One-shot; bootstraps the admin user via `POST /api/v1/auth/bootstrap`. |
 | `publisher` | ffmpeg sending an MPEG-TS testsrc into Bastion as stream `test`.     |
 | `viewer`    | ffmpeg subscribing to `test` and discarding bytes (headless sink).   |
 
@@ -52,12 +52,41 @@ curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/streams |
 ## Visual playback
 
 The bundled `viewer` is headless on purpose so it works on any host. For
-actual video playback, run ffplay on your **host** machine against the
-exposed UDP port:
+actual video playback, run ffplay on your **host** machine:
 
 ```bash
-ffplay 'srt://127.0.0.1:9710?streamid=#!::m=request,r=test'
+ffplay 'srt://localhost:9710?streamid=#!::m=request,r=test'
 ```
+
+Quote with single quotes so zsh leaves `#`, `!`, and `:` literal.
+
+### ffplay must be built with libsrt
+
+The mainline `homebrew-core/ffmpeg` formula **does not include libsrt** — you
+get `Protocol not found` if you try to dial an `srt://` URL with it.
+
+Install an SRT-enabled build from the community tap (one-time, ~5–10min source build):
+
+```bash
+brew uninstall ffmpeg          # remove the no-srt version if present
+brew tap homebrew-ffmpeg/ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-srt
+```
+
+Verify with `ffmpeg -protocols 2>&1 | grep ^srt$` (expect a match) or look
+for `--enable-libsrt` in `ffplay -version`'s `configuration:` line.
+
+### VLC
+
+VLC's URL parser treats `#` as a fragment separator and silently drops
+everything after it, so the standard SRT URL won't work pasted directly into
+"Open Network Stream." URL-encode it as `%23`:
+
+```
+srt://localhost:9710?streamid=%23!::m=request,r=test
+```
+
+If that still misbehaves on your VLC build (a few do), prefer `ffplay`.
 
 ## Notes
 
