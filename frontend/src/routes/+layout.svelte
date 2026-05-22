@@ -26,10 +26,19 @@
 
   let currentPath = $derived($page.url.pathname);
   let isPublic = $derived(publicRoutes.includes(currentPath));
+
+  const buildVersion = import.meta.env.VITE_BASTION_VERSION ?? 'dev';
 </script>
 
 {#if isPublic || !data.auth}
-  {@render children()}
+  <div class="min-h-screen flex flex-col">
+    <div class="flex-1">
+      {@render children()}
+    </div>
+    <footer class="text-center text-xs text-gray-600 py-3">
+      Bastion v{buildVersion}
+    </footer>
+  </div>
 {:else}
   <div class="min-h-screen flex flex-col">
     <nav class="bg-gray-900 border-b border-gray-800 px-6 py-3">
@@ -64,5 +73,9 @@
     <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-8">
       {@render children()}
     </main>
+
+    <footer class="text-center text-xs text-gray-600 py-3">
+      Bastion v{buildVersion}
+    </footer>
   </div>
 {/if}
