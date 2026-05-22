@@ -138,6 +138,9 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 		r.Post("/api/v1/streams", s.createStream)
 		r.Put("/api/v1/streams/{name}", s.updateStream)
 		r.Delete("/api/v1/streams/{name}", s.deleteStream)
+
+		r.Get("/api/v1/streams/{name}/logs", s.streamLogs)
+		r.Get("/api/v1/logs", s.globalLogs)
 	})
 
 	// Admin-only endpoints.

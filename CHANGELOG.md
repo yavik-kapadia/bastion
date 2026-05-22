@@ -2,6 +2,13 @@
 
 All notable changes to Bastion will be documented in this file.
 
+## [0.2.15] - 2026-05-22
+
+### Added
+- **Event logs with live tail.** A new `event_logs` SQLite table captures structured log records via a slog tee handler (text output to stdout is unchanged; the DB sink is advisory and drops oldest under sustained pressure). REST endpoints `GET /api/v1/logs` and `GET /api/v1/streams/{name}/logs` (manager+) return cursor-paged feeds; the existing dashboard WebSocket now also pushes `{type:"logs"}` batches for real-time updates. A housekeeping goroutine purges rows older than 24h every 5 minutes.
+- **Dashboard: per-stream and global Logs view.** Stream detail page gains a tail -f-style scrollable log pane; new `/logs` route shows the global feed. Autoscroll pauses when the user scrolls up; "Jump to latest" resumes it. Visible to managers/admins only.
+- Tests: `internal/db/logs_test.go` (insert/list/since-cursor/purge/index plan), `internal/logging/dbhandler_test.go` (level filter, batch + interval flush, drop-oldest pressure, stream-attr extraction, WithAttrs binding, close-drains-pending), and integration tests for the new REST endpoints under `internal/api/logs_test.go`.
+
 ## [0.2.9] - 2026-05-22
 
 ### Fixed

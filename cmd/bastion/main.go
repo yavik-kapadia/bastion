@@ -16,6 +16,7 @@ import (
 	"github.com/yavik-kapadia/bastion/internal/auth"
 	"github.com/yavik-kapadia/bastion/internal/config"
 	"github.com/yavik-kapadia/bastion/internal/db"
+	bastionlog "github.com/yavik-kapadia/bastion/internal/logging"
 	"github.com/yavik-kapadia/bastion/internal/metrics"
 	"github.com/yavik-kapadia/bastion/internal/relay"
 	"github.com/yavik-kapadia/bastion/internal/ws"
@@ -74,6 +75,24 @@ func run(ctx context.Context, cfg *config.Config) error {
 	hub := ws.NewHub()
 	go hub.Run(ctx)
 
+	// Tee slog into the DB so the dashboard can show a live log tail.
+	// The text handler keeps writing to stdout (container logs); the DB
+	// sink is advisory and drops oldest under sustained pressure.
+	innerLogger := slog.Default().Handler()
+	dbHandler := bastionlog.NewDBHandler(bastionlog.Options{
+		Inner: innerLogger,
+		Sink:  bastionlog.RepoSink{Repo: database.EventLogs},
+		Broadcaster: bastionlog.HubBroadcaster{
+			Send: hub.Broadcast,
+		},
+		MinLevel: slog.LevelInfo,
+	})
+	slog.SetDefault(slog.New(dbHandler))
+	defer dbHandler.Close()
+
+	// Housekeeping: purge logs older than 24h every 5 minutes.
+	go runLogPurge(ctx, database)
+
 	// Decode optional at-rest encryption key.
 	var encKey []byte
 	if cfg.API.EncryptionKey != "" {
@@ -118,6 +137,35 @@ func run(ctx context.Context, cfg *config.Config) error {
 		return err
 	case <-ctx.Done():
 		return nil
+	}
+}
+
+// runLogPurge deletes event_logs older than 24h every 5 minutes.
+// Stops when ctx is cancelled.
+func runLogPurge(ctx context.Context, database *db.DB) {
+	const ttl = 24 * time.Hour
+	const interval = 5 * time.Minute
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	// Run once at startup so a fresh container immediately trims old data
+	// (e.g. after a long crash-restart cycle).
+	if n, err := database.EventLogs.PurgeOlderThan(ttl); err != nil {
+		slog.Warn("event_logs: initial purge failed", "err", err)
+	} else if n > 0 {
+		slog.Debug("event_logs: purged stale rows", "deleted", n)
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n, err := database.EventLogs.PurgeOlderThan(ttl)
+			if err != nil {
+				slog.Warn("event_logs: purge failed", "err", err)
+				continue
+			}
+			slog.Debug("event_logs: purged stale rows", "deleted", n)
+		}
 	}
 }
 
