@@ -2,6 +2,16 @@
 
 All notable changes to Bastion will be documented in this file.
 
+## [0.2.6] - 2026-04-30
+
+### Fixed
+- **Relay: publisher reconnect race could crash the relay or strand viewers.** The previous `publisher != nil` check let a reconnecting publisher attach while the prior session was still tearing down — fan-out to a subscriber whose channel had just been closed could panic, and viewers could end up wired to a stale session. `Stream` now uses an explicit `pubIdle/pubActive/pubDraining` state machine; new publishers wait until the prior session's writePumps have drained.
+- **Relay: subscriber slot accounting under publisher disconnect.** Each subscriber now signals exit via a `done` channel that `relayLoop`'s teardown waits on (bounded to 5s), guaranteeing `subscriberCount` returns to truth even if a writePump is wedged. Also defends fan-out against send-on-closed-channel with a recover() guard.
+- **Relay: `r.streams` no longer accumulates zombie entries.** Stream entries with no publisher and no subscribers are removed from the map after the publisher's session ends.
+
+### Added
+- Tests: `TestPublisherEOFReconnectCleansSubscribers`, `TestPublisherEOFRaceWithReconnect`, `TestStreamGCAfterPublisherExits` cover the publisher-disconnect-with-attached-subscribers scenarios that produced the v0.2.4 freeze.
+
 ## [0.2.0] - 2026-03-26
 
 ### Changed

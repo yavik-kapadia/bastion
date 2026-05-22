@@ -182,10 +182,27 @@ func (r *Relay) handlePublisher(ctx context.Context, conn srt.Conn, name string)
 	}
 	slog.Info("relay: publisher started", "stream", name)
 
-	// Block until the publisher disconnects, then clean up empty streams.
-	// SetPublisher starts the relay loop in a goroutine; we wait for the
-	// connection to close by waiting for the stream to lose its publisher.
-	// We detect this via the conn's read path completing in relayLoop.
+	// Wait for the publisher's read path to complete in relayLoop, then GC
+	// the stream entry if no subscribers remain. Without this, r.streams
+	// accumulates zombie entries for every transient stream name ever seen.
+	s.WaitForPublisherExit()
+	r.gcStream(name)
+}
+
+// gcStream removes a stream from r.streams iff it has no publisher and no
+// subscribers. Called after a publisher disconnects (and periodically by
+// other paths if needed). Safe to call concurrently — checks under lock.
+func (r *Relay) gcStream(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	s, ok := r.streams[name]
+	if !ok {
+		return
+	}
+	if !s.idle() {
+		return
+	}
+	delete(r.streams, name)
 }
 
 func (r *Relay) handleSubscriber(ctx context.Context, conn srt.Conn, name string) {
