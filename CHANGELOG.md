@@ -2,6 +2,14 @@
 
 All notable changes to Bastion will be documented in this file.
 
+## [0.2.9] - 2026-05-22
+
+### Fixed
+- **Dashboard thumbnail no longer inflates `subscriberCount`.** Each open dashboard tab was polling `/api/v1/streams/<name>/thumbnail` every 15s, and the handler shelled out to ffmpeg as a real SRT request-mode subscriber — so N tabs ≈ N extra "viewers" in the reported count. The handler now dedupes concurrent requests with singleflight and caches the most recent PNG for 10s, so regardless of how many tabs are open the upstream SRT subscription fires at most once per stream per 10s.
+
+### Added
+- Tests: `TestThumbnailCacheSingleflight`, `TestThumbnailCacheTTL`, `TestThumbnailCacheErrorNotCached`, `TestThumbnailCacheDifferentStreamsIndependent`.
+
 ## [0.2.6] - 2026-04-30
 
 ### Fixed
