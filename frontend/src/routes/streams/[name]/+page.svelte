@@ -141,6 +141,17 @@
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
   }
+
+  // ffprobe reports frame rates as "num/den" — render either an integer
+  // ("120") or a decimal with 2 places for fractional rates ("29.97 fps").
+  function formatFps(raw: string): string {
+    if (!raw) return '—';
+    const [n, d] = raw.split('/').map(Number);
+    if (!d) return raw;
+    const fps = n / d;
+    if (Number.isInteger(fps)) return `${fps} fps`;
+    return `${fps.toFixed(2)} fps`;
+  }
 </script>
 
 <svelte:head><title>{name} — Bastion</title></svelte:head>
@@ -180,6 +191,47 @@
         style="max-height: 360px;"
         onerror={() => { thumbnailError = true; }}
       />
+    </div>
+  {/if}
+
+  <!-- What the publisher is actually sending. Populated by an ffprobe of the
+       live stream ~5s after the publisher attaches; null until then. -->
+  {#if stream?.media_info}
+    {@const mi = stream.media_info}
+    <div class="card">
+      <div class="text-sm font-semibold text-gray-200 mb-3">Publisher Media</div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-2 text-sm">
+        <div>
+          <div class="text-xs text-gray-500">Resolution</div>
+          <div class="text-gray-100">{mi.width} × {mi.height}</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500">Frame Rate</div>
+          <div class="text-gray-100">{formatFps(mi.fps)}</div>
+        </div>
+        <div>
+          <div class="text-xs text-gray-500">Codec</div>
+          <div class="text-gray-100">{mi.codec}{mi.profile ? ` (${mi.profile})` : ''}</div>
+        </div>
+        {#if mi.bit_rate_kbps}
+          <div>
+            <div class="text-xs text-gray-500">Bitrate</div>
+            <div class="text-gray-100">{(mi.bit_rate_kbps / 1000).toFixed(2)} Mbps</div>
+          </div>
+        {/if}
+        {#if mi.pix_fmt}
+          <div>
+            <div class="text-xs text-gray-500">Pixel Format</div>
+            <div class="text-gray-100">{mi.pix_fmt}</div>
+          </div>
+        {/if}
+        {#if mi.color_space}
+          <div>
+            <div class="text-xs text-gray-500">Color Space</div>
+            <div class="text-gray-100">{mi.color_space}{mi.color_range ? ` (${mi.color_range})` : ''}</div>
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 

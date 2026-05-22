@@ -1,5 +1,17 @@
 const BASE = '/api/v1';
 
+export interface MediaInfo {
+  codec: string;
+  profile?: string;
+  width: number;
+  height: number;
+  fps: string;
+  pix_fmt?: string;
+  color_space?: string;
+  color_range?: string;
+  bit_rate_kbps?: number;
+}
+
 export interface Stream {
   id: string;
   name: string;
@@ -11,6 +23,7 @@ export interface Stream {
   passphrase?: string;
   has_publisher: boolean;
   subscriber_count: number;
+  media_info?: MediaInfo;
   created_at: string;
   updated_at: string;
 }

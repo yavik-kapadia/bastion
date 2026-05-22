@@ -32,16 +32,17 @@ type RelayReader interface {
 
 // Server is the HTTP API server.
 type Server struct {
-	db         *db.DB
-	relay      RelayReader
-	prom       *metrics.Prom
-	hub        *ws.Hub
-	frontend   http.Handler // serves the embedded SPA; nil = no frontend
-	encKey     []byte       // AES-256 key for passphrase encryption; nil = disabled
-	srtAddr    string       // SRT listener address, used for thumbnail frame grabs
-	publicHost string       // optional host returned to clients for SRT command generation
-	thumbCache *thumbnailCache
-	httpServer *http.Server
+	db             *db.DB
+	relay          RelayReader
+	prom           *metrics.Prom
+	hub            *ws.Hub
+	frontend       http.Handler // serves the embedded SPA; nil = no frontend
+	encKey         []byte       // AES-256 key for passphrase encryption; nil = disabled
+	srtAddr        string       // SRT listener address, used for thumbnail frame grabs
+	publicHost     string       // optional host returned to clients for SRT command generation
+	thumbCache     *thumbnailCache
+	mediaInfoCache *mediaInfoCache
+	httpServer     *http.Server
 }
 
 // NewServer constructs an API Server.
@@ -49,13 +50,14 @@ type Server struct {
 // Pass nil to disable the dashboard (API-only mode).
 func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string, publicHost string) (*Server, error) {
 	s := &Server{
-		db:         database,
-		relay:      r,
-		prom:       p,
-		hub:        hub,
-		srtAddr:    srtAddr,
-		publicHost: publicHost,
-		thumbCache: newThumbnailCache(10 * time.Second),
+		db:             database,
+		relay:          r,
+		prom:           p,
+		hub:            hub,
+		srtAddr:        srtAddr,
+		publicHost:     publicHost,
+		thumbCache:     newThumbnailCache(10 * time.Second),
+		mediaInfoCache: newMediaInfoCache(),
 	}
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
@@ -88,6 +90,8 @@ var loginLimiter = newLoginRateLimiter(10, 15*time.Minute)
 
 // Start binds the HTTP server and serves requests until ctx is cancelled.
 func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) error {
+	go s.runMediaInfoProbes(ctx)
+
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
