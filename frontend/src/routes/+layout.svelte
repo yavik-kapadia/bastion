@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { getAuth, clearAuth, isAdmin } from '$lib/stores/auth.svelte';
+  import { getAuth, clearAuth, isAdmin, isManager } from '$lib/stores/auth.svelte';
   import { connectWS, disconnectWS } from '$lib/ws';
   import { api } from '$lib/api';
 
@@ -57,6 +57,11 @@
           <a href="/streams" class="text-sm {currentPath.startsWith('/streams') ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
             Streams
           </a>
+          {#if isManager()}
+            <a href="/logs" class="text-sm {currentPath.startsWith('/logs') ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
+              Logs
+            </a>
+          {/if}
           {#if isAdmin()}
             <a href="/users" class="text-sm {currentPath.startsWith('/users') ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
               Users

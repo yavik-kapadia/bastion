@@ -31,6 +31,24 @@ export interface MetricsSnapshot {
 
 export const metricsStore = writable<MetricsSnapshot | null>(null);
 
+export interface LogRecord {
+  id: number;
+  ts: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  stream: string | null;
+  msg: string;
+  attrs: Record<string, unknown>;
+}
+
+export interface LogBatch {
+  type: 'logs';
+  records: LogRecord[];
+}
+
+// logsStore emits each WS log batch as it arrives. Consumers append to
+// their local buffer; the store does not retain history.
+export const logsStore = writable<LogBatch | null>(null);
+
 let ws: WebSocket | null = null;
 let reconnectDelay = 1000;
 let stopped = false;
@@ -50,9 +68,11 @@ export function connectWS() {
 
   ws.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data) as MetricsSnapshot;
+      const msg = JSON.parse(event.data) as MetricsSnapshot | LogBatch;
       if (msg.type === 'metrics') {
-        metricsStore.set(msg);
+        metricsStore.set(msg as MetricsSnapshot);
+      } else if (msg.type === 'logs') {
+        logsStore.set(msg as LogBatch);
       }
     } catch (_) {
       // ignore malformed messages

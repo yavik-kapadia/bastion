@@ -8,6 +8,7 @@
   import { getHostUrl, setHostUrl, resolvedHost } from '$lib/stores/settings.svelte';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
+  import LogTail from '$lib/components/LogTail.svelte';
   import type { Stream, StreamPayload } from '$lib/api';
 
   let { data } = $props();
@@ -364,4 +365,15 @@
       </div>
     {/if}
   </div>
+
+  <!-- Logs -->
+  {#if isManager()}
+    <div class="card">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold">Logs</h2>
+        <span class="text-xs text-gray-500">live · last 24h</span>
+      </div>
+      <LogTail stream={name} />
+    </div>
+  {/if}
 </div>

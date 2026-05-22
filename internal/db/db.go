@@ -10,10 +10,11 @@ import (
 
 // DB wraps a *sql.DB and exposes typed repositories.
 type DB struct {
-	sql     *sql.DB
-	Streams *StreamRepo
-	Users   *UserRepo
-	Sessions *SessionRepo
+	sql       *sql.DB
+	Streams   *StreamRepo
+	Users     *UserRepo
+	Sessions  *SessionRepo
+	EventLogs *EventLogsRepo
 }
 
 // Open opens (or creates) the SQLite database at path and runs all pending migrations.
@@ -35,6 +36,7 @@ func Open(path string) (*DB, error) {
 	d.Streams = &StreamRepo{db: sqlDB}
 	d.Users = &UserRepo{db: sqlDB}
 	d.Sessions = &SessionRepo{db: sqlDB}
+	d.EventLogs = &EventLogsRepo{db: sqlDB}
 	return d, nil
 }
 

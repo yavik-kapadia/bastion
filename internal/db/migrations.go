@@ -51,4 +51,17 @@ var migrations = []string{
 
 	`CREATE INDEX IF NOT EXISTS idx_connection_log_stream ON connection_log(stream_name)`,
 	`CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id)`,
+
+	// v2: event_logs — short-lived (24h TTL) structured log buffer used by the
+	// dashboard's live-tail. Captured by a slog tee handler.
+	`CREATE TABLE IF NOT EXISTS event_logs (
+		id     INTEGER PRIMARY KEY,
+		ts     INTEGER NOT NULL,                -- unix nanoseconds
+		level  TEXT    NOT NULL,                -- debug|info|warn|error
+		stream TEXT,                            -- NULL = global event
+		msg    TEXT    NOT NULL,
+		attrs  TEXT    NOT NULL DEFAULT '{}'    -- slog attrs as JSON
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_event_logs_stream_ts ON event_logs(stream, ts DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_event_logs_ts ON event_logs(ts)`,
 }

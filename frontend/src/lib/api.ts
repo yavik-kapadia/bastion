@@ -90,5 +90,33 @@ export const api = {
   listUsers: () => request<User[]>('GET', '/users'),
   createUser: (username: string, password: string, role: string) =>
     request<User>('POST', '/users', { username, password, role }),
-  deleteUser: (id: string) => request<unknown>('DELETE', `/users/${id}`)
+  deleteUser: (id: string) => request<unknown>('DELETE', `/users/${id}`),
+
+  streamLogs: (name: string, opts: { limit?: number; since?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit != null) params.set('limit', String(opts.limit));
+    if (opts.since != null) params.set('since', String(opts.since));
+    const qs = params.toString();
+    return request<LogEntry[]>(
+      'GET',
+      `/streams/${encodeURIComponent(name)}/logs${qs ? '?' + qs : ''}`
+    );
+  },
+
+  globalLogs: (opts: { limit?: number; since?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit != null) params.set('limit', String(opts.limit));
+    if (opts.since != null) params.set('since', String(opts.since));
+    const qs = params.toString();
+    return request<LogEntry[]>('GET', `/logs${qs ? '?' + qs : ''}`);
+  }
 };
+
+export interface LogEntry {
+  id: number;
+  ts: number; // unix nanoseconds
+  level: 'debug' | 'info' | 'warn' | 'error';
+  stream: string | null;
+  msg: string;
+  attrs: Record<string, unknown>;
+}
