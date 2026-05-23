@@ -18,6 +18,7 @@ import (
 	"github.com/yavik-kapadia/bastion/internal/db"
 	bastionlog "github.com/yavik-kapadia/bastion/internal/logging"
 	"github.com/yavik-kapadia/bastion/internal/metrics"
+	"github.com/yavik-kapadia/bastion/internal/notify"
 	"github.com/yavik-kapadia/bastion/internal/relay"
 	"github.com/yavik-kapadia/bastion/internal/ws"
 )
@@ -117,6 +118,22 @@ func run(ctx context.Context, cfg *config.Config) error {
 
 	// Auth guard: enforces per-stream encryption, publisher ACLs, subscriber caps.
 	guard = auth.NewGuard(database.Streams, r, encKey, cfg.SRT.AllowUnregistered)
+
+	// Outbound webhook for publisher_disconnect events. Empty URL = disabled
+	// (Send/Start are no-ops, no goroutine started).
+	wb := notify.NewWebhook(cfg.Notify.PublisherDisconnectWebhook)
+	if cfg.Notify.PublisherDisconnectWebhook != "" {
+		go wb.Start(ctx)
+		r.OnPublisherDisconnect = func(stream, remoteAddr string, dur time.Duration) {
+			wb.Send(notify.Event{
+				Type:       "publisher_disconnect",
+				Stream:     stream,
+				Remote:     remoteAddr,
+				Duration:   dur.String(),
+				OccurredAt: time.Now().UTC(),
+			})
+		}
+	}
 
 	// Metrics collector: polls relay stats and pushes to WS clients + Prometheus.
 	collector := metrics.NewCollector(r, hub, prom, time.Second)

@@ -31,6 +31,14 @@ type Config struct {
 	MaxConcurrentStreams int
 }
 
+// PublisherDisconnectFunc is invoked after a publisher session ends (i.e.
+// after WaitForPublisherExit returns). stream is the stream name, remote is
+// the publisher's remote address as observed at attach time, and duration is
+// the elapsed wall-clock time of the session. Implementations must be safe
+// to call from any goroutine and should not block — the relay calls this
+// inline on the publisher's lifecycle goroutine.
+type PublisherDisconnectFunc func(stream string, remote string, duration time.Duration)
+
 // Relay is the core SRT relay engine: it accepts incoming connections,
 // routes publishers and subscribers to named streams, and fans out packets.
 type Relay struct {
@@ -38,6 +46,10 @@ type Relay struct {
 	bufSize int
 	auth    AuthFunc
 	cfg     Config
+
+	// OnPublisherDisconnect, if non-nil, is invoked after each publisher
+	// session ends. Optional — leave nil to disable. Set before Start.
+	OnPublisherDisconnect PublisherDisconnectFunc
 
 	mu      sync.RWMutex
 	streams map[string]*Stream
@@ -200,6 +212,15 @@ func (r *Relay) handlePublisher(ctx context.Context, conn srt.Conn, name string)
 	}
 	r.mu.Unlock()
 
+	// Capture publisher identity for the disconnect callback before SetPublisher
+	// takes ownership of conn. Once relayLoop runs, the connection may be torn
+	// down concurrently and RemoteAddr would race.
+	var remoteAddr string
+	if ra := conn.RemoteAddr(); ra != nil {
+		remoteAddr = ra.String()
+	}
+	startedAt := time.Now()
+
 	if err := s.SetPublisher(ctx, conn); err != nil {
 		slog.Warn("relay: publisher rejected", "stream", name, "err", err)
 		conn.Close()
@@ -211,6 +232,14 @@ func (r *Relay) handlePublisher(ctx context.Context, conn srt.Conn, name string)
 	// the stream entry if no subscribers remain. Without this, r.streams
 	// accumulates zombie entries for every transient stream name ever seen.
 	s.WaitForPublisherExit()
+
+	// Fire the disconnect callback, if wired. Done before gcStream so the
+	// stream entry is still observable to any synchronous handler that wants
+	// to consult it (currently none do, but it preserves the option).
+	if cb := r.OnPublisherDisconnect; cb != nil {
+		cb(name, remoteAddr, time.Since(startedAt))
+	}
+
 	r.gcStream(name)
 }
 
