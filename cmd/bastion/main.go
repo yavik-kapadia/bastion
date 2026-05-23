@@ -91,7 +91,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 	defer dbHandler.Close()
 
 	// Housekeeping: purge logs older than configured retention every 5 minutes.
-	go runLogPurge(ctx, database, cfg.Logging.EventRetention)
+	go runLogPurge(ctx, database, cfg.Logging.EventRetention, cfg.Logging.MaxDBSize)
 
 	// Decode optional at-rest encryption key.
 	var encKey []byte
@@ -144,34 +144,49 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 }
 
-// runLogPurge deletes event_logs older than ttl every 5 minutes.
-// Stops when ctx is cancelled. ttl<=0 disables the purge.
-func runLogPurge(ctx context.Context, database *db.DB, ttl time.Duration) {
-	if ttl <= 0 {
-		slog.Info("event_logs: retention disabled (logging.event_retention=0)")
+// runLogPurge deletes event_logs older than ttl every 5 minutes, and also
+// trims oldest rows when the database size exceeds maxBytes (soft cap).
+// Stops when ctx is cancelled. ttl<=0 disables the time-based purge;
+// maxBytes<=0 disables the size cap. Both checks are independent.
+func runLogPurge(ctx context.Context, database *db.DB, ttl time.Duration, maxBytes int64) {
+	if ttl <= 0 && maxBytes <= 0 {
+		slog.Info("event_logs: retention disabled (logging.event_retention=0, logging.max_db_size=0)")
 		return
+	}
+	if ttl <= 0 {
+		slog.Info("event_logs: time-based retention disabled (logging.event_retention=0)")
 	}
 	const interval = 5 * time.Minute
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	// Run once at startup so a fresh container immediately trims old data
 	// (e.g. after a long crash-restart cycle).
-	if n, err := database.EventLogs.PurgeOlderThan(ttl); err != nil {
-		slog.Warn("event_logs: initial purge failed", "err", err)
-	} else if n > 0 {
-		slog.Debug("event_logs: purged stale rows", "deleted", n)
-	}
+	purgeOnce(database, ttl, maxBytes)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			n, err := database.EventLogs.PurgeOlderThan(ttl)
-			if err != nil {
-				slog.Warn("event_logs: purge failed", "err", err)
-				continue
-			}
+			purgeOnce(database, ttl, maxBytes)
+		}
+	}
+}
+
+// purgeOnce runs both the time-based purge and the size-based trim. Each is
+// independent; a failure in one does not block the other.
+func purgeOnce(database *db.DB, ttl time.Duration, maxBytes int64) {
+	if ttl > 0 {
+		if n, err := database.EventLogs.PurgeOlderThan(ttl); err != nil {
+			slog.Warn("event_logs: purge failed", "err", err)
+		} else if n > 0 {
 			slog.Debug("event_logs: purged stale rows", "deleted", n)
+		}
+	}
+	if maxBytes > 0 {
+		if n, err := database.EventLogs.TrimToBytes(maxBytes); err != nil {
+			slog.Warn("event_logs: size trim failed", "err", err)
+		} else if n > 0 {
+			slog.Info("event_logs: trimmed oldest rows for size cap", "deleted", n, "max_bytes", maxBytes)
 		}
 	}
 }
