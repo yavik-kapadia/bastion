@@ -104,26 +104,31 @@ func (s *Server) extractToken(r *http.Request) (string, bool) {
 }
 
 // setSessionCookie writes an HttpOnly session cookie with the API key.
-func setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+// MaxAge tracks the configured SessionTTL so browsers expire stale cookies
+// even though the underlying API key currently has no DB-side expiry.
+func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, token string) {
+	secure := r.TLS != nil || s.forceHTTPS
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   secure,
+		MaxAge:   int(s.sessionTTL.Seconds()),
 	})
 }
 
 // clearSessionCookie expires the session cookie.
-func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+func (s *Server) clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	secure := r.TLS != nil || s.forceHTTPS
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   r.TLS != nil,
+		Secure:   secure,
 		MaxAge:   -1,
 	})
 }

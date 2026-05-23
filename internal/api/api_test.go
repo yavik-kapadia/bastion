@@ -41,7 +41,7 @@ func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	}
 
 	hub := ws.NewHub()
-	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, "", "", "")
+	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, Options{ThumbnailEnabled: true})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -155,7 +155,7 @@ func newTestServerWithPublicHost(t *testing.T, publicHost string) (*Server, *htt
 	}
 
 	hub := ws.NewHub()
-	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, "", "", publicHost)
+	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, Options{PublicHost: publicHost})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestSetup(t *testing.T) {
 	t.Cleanup(func() { database.Close() })
 
 	hub := ws.NewHub()
-	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, "", "", "")
+	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, Options{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"time"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -21,6 +21,13 @@ import (
 // run, and a successful frame is cached for ~10s so polling does not open a
 // fresh SRT subscriber connection on every refresh.
 func (s *Server) streamThumbnail(w http.ResponseWriter, r *http.Request) {
+	if !s.thumbnailEnabled {
+		// Operator has explicitly disabled thumbnails. Skip the cache lookup
+		// entirely so we never spin up ffmpeg / take a subscriber slot.
+		http.NotFound(w, r)
+		return
+	}
+
 	name := chi.URLParam(r, "name")
 
 	stats, ok := s.relay.StreamStats(name)
@@ -69,21 +76,22 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 		}
 	}
 
-	// 15s budget covers SRT handshake + the longest realistic GOP (4s at
-	// 30fps / 120-frame keyint, 2s at 60fps / 120-frame keyint).
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	// Timeout budget covers SRT handshake + the longest realistic GOP (4s at
+	// 30fps / 120-frame keyint, 2s at 60fps / 120-frame keyint). Operators
+	// can extend this for high-keyint streams via thumbnail.timeout.
+	ctx, cancel := context.WithTimeout(ctx, s.thumbnailTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "ffmpeg",
 		"-loglevel", "error",
 		"-i", srtURL,
-		"-an",                     // ignore audio — saves work, avoids audio-codec edge cases
-		"-map", "0:v:0",           // first video stream only, in case of multiple
-		"-frames:v", "1",          // exactly one decoded frame
-		"-vf", "scale=480:-2",     // thumbnail-sized; -2 keeps aspect ratio, even height
+		"-an",                                                   // ignore audio — saves work, avoids audio-codec edge cases
+		"-map", "0:v:0",                                         // first video stream only, in case of multiple
+		"-frames:v", "1",                                        // exactly one decoded frame
+		"-vf", fmt.Sprintf("scale=%d:-2", s.thumbnailWidth),     // -2 keeps aspect ratio, even height
 		"-f", "image2pipe",
 		"-vcodec", "mjpeg",
-		"-q:v", "5",               // 1-31, lower = better; 5 is solid for a thumbnail
+		"-q:v", strconv.Itoa(s.thumbnailJPEGQuality),            // 1-31, lower = better
 		"-",
 	)
 
