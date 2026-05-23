@@ -154,6 +154,8 @@ func run(ctx context.Context, cfg *config.Config) error {
 		ThumbnailCacheTTL:    cfg.Thumbnail.CacheTTL,
 		ThumbnailWidth:       cfg.Thumbnail.Width,
 		ThumbnailJPEGQuality: cfg.Thumbnail.JPEGQuality,
+		ThumbnailFormat:      cfg.Thumbnail.Format,
+		ThumbnailWebPQuality: cfg.Thumbnail.WebPQuality,
 		ThumbnailTimeout:     cfg.Thumbnail.Timeout,
 
 		MediaInfoEnabled: cfg.MediaInfo.Enabled,

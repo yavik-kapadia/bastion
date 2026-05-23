@@ -50,6 +50,13 @@ type Options struct {
 	ThumbnailWidth       int
 	ThumbnailJPEGQuality int
 	ThumbnailTimeout     time.Duration
+	// ThumbnailFormat: "jpeg" (default) or "webp". WebP gives smaller
+	// files and better quality per byte; some legacy <img> consumers may
+	// not render it, so the default stays JPEG.
+	ThumbnailFormat      string
+	// ThumbnailWebPQuality: 0-100 quality factor for the WebP encoder
+	// (libwebp's -quality). Only consulted when Format == "webp".
+	ThumbnailWebPQuality int
 
 	// Per-publisher ffprobe
 	MediaInfoEnabled bool
@@ -84,6 +91,8 @@ type Server struct {
 	thumbnailEnabled     bool
 	thumbnailWidth       int
 	thumbnailJPEGQuality int
+	thumbnailWebPQuality int
+	thumbnailFormat      string // "jpeg" or "webp"
 	thumbnailTimeout     time.Duration
 
 	// MediaInfo knobs
@@ -112,6 +121,12 @@ func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, fro
 	}
 	if opts.ThumbnailJPEGQuality == 0 {
 		opts.ThumbnailJPEGQuality = 5
+	}
+	if opts.ThumbnailFormat == "" {
+		opts.ThumbnailFormat = "jpeg"
+	}
+	if opts.ThumbnailWebPQuality == 0 {
+		opts.ThumbnailWebPQuality = 75 // libwebp default; balances size/quality
 	}
 	if opts.ThumbnailTimeout == 0 {
 		opts.ThumbnailTimeout = 15 * time.Second
@@ -149,6 +164,8 @@ func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, fro
 		thumbnailEnabled:     opts.ThumbnailEnabled,
 		thumbnailWidth:       opts.ThumbnailWidth,
 		thumbnailJPEGQuality: opts.ThumbnailJPEGQuality,
+		thumbnailWebPQuality: opts.ThumbnailWebPQuality,
+		thumbnailFormat:      opts.ThumbnailFormat,
 		thumbnailTimeout:     opts.ThumbnailTimeout,
 
 		mediaInfoEnabled: opts.MediaInfoEnabled,

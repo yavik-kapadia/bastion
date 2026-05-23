@@ -15,11 +15,12 @@ import (
 )
 
 // streamThumbnail GET /api/v1/streams/{name}/thumbnail
-// Returns a JPEG/PNG frame grabbed from the live SRT stream.
+// Returns a JPEG or WebP frame grabbed from the live SRT stream.
+// Format is controlled by [thumbnail].format in bastion.toml.
 //
 // Requests are dedup'd through s.thumbCache: concurrent tabs share one ffmpeg
-// run, and a successful frame is cached for ~10s so polling does not open a
-// fresh SRT subscriber connection on every refresh.
+// run, and a successful frame is cached for the configured TTL so polling
+// does not open a fresh SRT subscriber connection on every refresh.
 func (s *Server) streamThumbnail(w http.ResponseWriter, r *http.Request) {
 	if !s.thumbnailEnabled {
 		// Operator has explicitly disabled thumbnails. Skip the cache lookup
@@ -36,7 +37,7 @@ func (s *Server) streamThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	png, err := s.thumbCache.get(r.Context(), name, func(ctx context.Context) ([]byte, error) {
+	img, err := s.thumbCache.get(r.Context(), name, func(ctx context.Context) ([]byte, error) {
 		return s.grabFrame(ctx, name)
 	})
 	if err != nil {
@@ -45,9 +46,16 @@ func (s *Server) streamThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Type", s.thumbnailContentType())
 	w.Header().Set("Cache-Control", "no-store")
-	w.Write(png) //nolint:errcheck
+	w.Write(img) //nolint:errcheck
+}
+
+func (s *Server) thumbnailContentType() string {
+	if s.thumbnailFormat == "webp" {
+		return "image/webp"
+	}
+	return "image/jpeg"
 }
 
 // grabFrame runs ffmpeg against the local SRT listener to capture a single
@@ -82,18 +90,30 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.thumbnailTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	args := []string{
 		"-loglevel", "error",
 		"-i", srtURL,
-		"-an",                                                   // ignore audio — saves work, avoids audio-codec edge cases
-		"-map", "0:v:0",                                         // first video stream only, in case of multiple
-		"-frames:v", "1",                                        // exactly one decoded frame
-		"-vf", fmt.Sprintf("scale=%d:-2", s.thumbnailWidth),     // -2 keeps aspect ratio, even height
+		"-an",                                               // ignore audio — saves work, avoids audio-codec edge cases
+		"-map", "0:v:0",                                     // first video stream only
+		"-frames:v", "1",                                    // exactly one decoded frame
+		"-vf", fmt.Sprintf("scale=%d:-2", s.thumbnailWidth), // -2 keeps aspect ratio, even height
 		"-f", "image2pipe",
-		"-vcodec", "mjpeg",
-		"-q:v", strconv.Itoa(s.thumbnailJPEGQuality),            // 1-31, lower = better
-		"-",
-	)
+	}
+	switch s.thumbnailFormat {
+	case "webp":
+		args = append(args,
+			"-vcodec", "libwebp",
+			"-quality", strconv.Itoa(s.thumbnailWebPQuality), // 0-100, higher = better
+			"-",
+		)
+	default: // jpeg
+		args = append(args,
+			"-vcodec", "mjpeg",
+			"-q:v", strconv.Itoa(s.thumbnailJPEGQuality), // 1-31, lower = better
+			"-",
+		)
+	}
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
