@@ -18,6 +18,36 @@
   let updateLoading = $state(false);
   let updateError = $state('');
   let deleteLoading = $state(false);
+  // Pre-fetched on entering edit mode so the StreamForm can prefill the
+  // passphrase field. Null until fetched / not yet revealed.
+  let editPassphrase = $state<string | null>(null);
+  let editLoading = $state(false);
+
+  async function startEditing() {
+    updateError = '';
+    if (stream?.key_length && stream.key_length > 0) {
+      editLoading = true;
+      try {
+        const revealed = await api.getStream(name, true);
+        editPassphrase = revealed.passphrase ?? '';
+      } catch (e) {
+        // Manager+ should always be allowed to reveal; if it fails, leave
+        // the field blank so the user can re-enter or skip the change.
+        editPassphrase = '';
+      } finally {
+        editLoading = false;
+      }
+    } else {
+      editPassphrase = '';
+    }
+    editing = true;
+  }
+
+  function cancelEditing() {
+    editing = false;
+    editPassphrase = null;
+    updateError = '';
+  }
 
   let hostInput = $state(getHostUrl());
 
@@ -51,11 +81,15 @@
     stream?.latency_ms && stream.latency_ms > 0 ? `&latency=${stream.latency_ms * 1000}` : ''
   );
 
+  // Use SINGLE quotes around the SRT URL: in zsh (and many bash setups),
+  // double quotes don't suppress history expansion of `!`, which mangles
+  // the streamid `#!::` prefix when pasted into a terminal. Single quotes
+  // preserve `!`, `#`, `&`, and `:` literally.
   let publishDisplay = $derived(
-    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${displaySuffix}${latencySuffix}"`
+    `ffmpeg -re -i input.ts -c copy -f mpegts 'srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${displaySuffix}${latencySuffix}'`
   );
   let subscribeDisplay = $derived(
-    `ffplay "srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${displaySuffix}${latencySuffix}"`
+    `ffplay 'srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${displaySuffix}${latencySuffix}'`
   );
 
   // Fetch passphrase on demand and build the real command for clipboard
@@ -71,9 +105,9 @@
     }
     const lat = stream?.latency_ms && stream.latency_ms > 0 ? `&latency=${stream.latency_ms * 1000}` : '';
     if (mode === 'publish') {
-      return `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${passSuffix}${lat}"`;
+      return `ffmpeg -re -i input.ts -c copy -f mpegts 'srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${passSuffix}${lat}'`;
     }
-    return `ffplay "srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${passSuffix}${lat}"`;
+    return `ffplay 'srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${passSuffix}${lat}'`;
   }
 
   function refreshThumbnail() {
@@ -191,8 +225,12 @@
     </div>
     {#if isManager()}
       <div class="flex gap-2">
-        <button class="btn-ghost" onclick={() => { editing = !editing; updateError = ''; }}>
-          {editing ? 'Cancel' : 'Edit'}
+        <button
+          class="btn-ghost"
+          disabled={editLoading}
+          onclick={() => (editing ? cancelEditing() : startEditing())}
+        >
+          {editing ? 'Cancel' : editLoading ? 'Loading…' : 'Edit'}
         </button>
         <button class="btn-danger" onclick={handleDelete} disabled={deleteLoading}>
           {deleteLoading ? 'Deleting...' : 'Delete'}
@@ -201,14 +239,14 @@
     {/if}
   </div>
 
-  <!-- Preview thumbnail -->
+  <!-- Preview thumbnail. object-contain (not object-cover) so unusual aspect
+       ratios show the full frame letter-/pillarboxed rather than cropped. -->
   {#if thumbnailSrc && !thumbnailError}
-    <div class="card overflow-hidden p-0">
+    <div class="card overflow-hidden p-0 bg-black flex items-center justify-center">
       <img
         src={thumbnailSrc}
         alt="Stream preview"
-        class="w-full object-cover rounded-lg"
-        style="max-height: 360px;"
+        class="w-full h-auto max-h-[480px] object-contain rounded-lg"
         onerror={() => { thumbnailError = true; }}
       />
     </div>
@@ -331,7 +369,7 @@
     <h2 class="font-semibold mb-4">Configuration</h2>
     {#if editing && isManager()}
       <StreamForm
-        initial={stream}
+        initial={{ ...stream, passphrase: editPassphrase ?? '' }}
         submitLabel="Save Changes"
         loading={updateLoading}
         error={updateError}

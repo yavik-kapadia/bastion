@@ -11,7 +11,10 @@
 
   let name = initial.name ?? '';
   let description = initial.description ?? '';
-  let passphrase = '';
+  // When editing an existing encrypted stream, the parent page fetches the
+  // decrypted passphrase via /api/v1/streams/{name}?reveal=true and passes
+  // it in initial.passphrase so this field shows what's currently in use.
+  let passphrase = initial.passphrase ?? '';
   let showPassphrase = false;
   let keyLength = initial.key_length ?? 0;
 
