@@ -33,7 +33,7 @@ func newLogsTestServer(t *testing.T) (*httptest.Server, *db.DB) {
 	}
 
 	hub := ws.NewHub()
-	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, "", "", "")
+	srv, err := NewServer(database, &fakeRelay{}, metrics.NewProm(), hub, nil, Options{})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}

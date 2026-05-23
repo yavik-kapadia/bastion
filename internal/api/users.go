@@ -49,7 +49,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to create session key")
 		return
 	}
-	setSessionCookie(w, r, rawKey)
+	s.setSessionCookie(w, r, rawKey)
 	respond(w, http.StatusCreated, map[string]any{
 		"user_id":  id,
 		"username": req.Username,
@@ -75,7 +75,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "could not create session key")
 		return
 	}
-	setSessionCookie(w, r, rawKey)
+	s.setSessionCookie(w, r, rawKey)
 	respond(w, http.StatusOK, map[string]any{
 		"user_id":  u.ID,
 		"username": u.Username,
@@ -101,7 +101,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 
 // logout POST /api/v1/auth/logout — clears the session cookie.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	clearSessionCookie(w, r)
+	s.clearSessionCookie(w, r)
 	respond(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
 

@@ -140,13 +140,32 @@ func run(ctx context.Context, cfg *config.Config) error {
 	go collector.Start(ctx)
 
 	// HTTP API
-	apiSrv, err := api.NewServer(database, r, prom, hub, frontendFS(), cfg.API.EncryptionKey, cfg.SRT.ListenAddr, cfg.API.PublicHost)
+	apiSrv, err := api.NewServer(database, r, prom, hub, frontendFS(), api.Options{
+		EncKeyHex:  cfg.API.EncryptionKey,
+		SRTAddr:    cfg.SRT.ListenAddr,
+		PublicHost: cfg.API.PublicHost,
+
+		SessionTTL:      cfg.API.SessionTTL,
+		LoginRateLimit:  cfg.API.LoginRateLimit,
+		LoginRateWindow: cfg.API.LoginRateWindow,
+		ForceHTTPS:      cfg.API.ForceHTTPS,
+
+		ThumbnailEnabled:     cfg.Thumbnail.Enabled,
+		ThumbnailCacheTTL:    cfg.Thumbnail.CacheTTL,
+		ThumbnailWidth:       cfg.Thumbnail.Width,
+		ThumbnailJPEGQuality: cfg.Thumbnail.JPEGQuality,
+		ThumbnailTimeout:     cfg.Thumbnail.Timeout,
+
+		MediaInfoEnabled: cfg.MediaInfo.Enabled,
+
+		BrandName:             cfg.Dashboard.BrandName,
+		ThumbnailRefreshRate:  cfg.Dashboard.ThumbnailRefreshRate,
+		ExternalPort:          cfg.SRT.ExternalPort,
+		DefaultMaxSubscribers: cfg.SRT.DefaultMaxSubscribers,
+	})
 	if err != nil {
 		return fmt.Errorf("new api server: %w", err)
 	}
-	apiSrv.SetExternalPort(cfg.SRT.ExternalPort)
-	apiSrv.SetDefaultMaxSubscribers(cfg.SRT.DefaultMaxSubscribers)
-	apiSrv.SetDashboardConfig(cfg.Dashboard.BrandName, cfg.Dashboard.ThumbnailRefreshRate)
 
 	// Start relay and API concurrently.
 	errCh := make(chan error, 2)

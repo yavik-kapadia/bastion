@@ -30,6 +30,36 @@ type RelayReader interface {
 	StreamStats(name string) (relay.StreamStats, bool)
 }
 
+// Options bundles the runtime knobs for an api.Server. Zero values map to the
+// historical hardcoded defaults so callers can pass an empty Options{}.
+type Options struct {
+	EncKeyHex  string
+	SRTAddr    string
+	PublicHost string
+
+	// API behavior
+	SessionTTL      time.Duration
+	LoginRateLimit  int
+	LoginRateWindow time.Duration
+	ForceHTTPS      bool
+
+	// Thumbnail pipeline
+	ThumbnailEnabled     bool
+	ThumbnailCacheTTL    time.Duration
+	ThumbnailWidth       int
+	ThumbnailJPEGQuality int
+	ThumbnailTimeout     time.Duration
+
+	// Per-publisher ffprobe
+	MediaInfoEnabled bool
+
+	// Dashboard surface
+	BrandName            string
+	ThumbnailRefreshRate time.Duration
+	ExternalPort         int
+	DefaultMaxSubscribers int
+}
+
 // Server is the HTTP API server.
 type Server struct {
 	db             *db.DB
@@ -44,8 +74,21 @@ type Server struct {
 	mediaInfoCache *mediaInfoCache
 	httpServer     *http.Server
 
-	// Dashboard-side knobs, defaulted in NewServer, optionally overridden
-	// from cmd/bastion/main.go via setters before Start() runs.
+	// Auth/session knobs
+	sessionTTL   time.Duration
+	loginLimiter *loginRateLimiter
+	forceHTTPS   bool
+
+	// Thumbnail knobs (used by streamThumbnail + grabFrame)
+	thumbnailEnabled     bool
+	thumbnailWidth       int
+	thumbnailJPEGQuality int
+	thumbnailTimeout     time.Duration
+
+	// MediaInfo knobs
+	mediaInfoEnabled bool
+
+	// Dashboard surface
 	externalPort          int           // host port surfaced to clients in SRT URLs (0 = use the port from srtAddr)
 	defaultMaxSubscribers int           // applied to new streams that don't specify a max
 	brandName             string        // dashboard brand
@@ -55,24 +98,70 @@ type Server struct {
 // NewServer constructs an API Server.
 // frontendFS is an optional fs.FS containing the built SvelteKit static files.
 // Pass nil to disable the dashboard (API-only mode).
-func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string, publicHost string) (*Server, error) {
+//
+// Zero-valued fields in opts fall back to the original hardcoded defaults so
+// existing tests that pass api.Options{} keep their previous behavior.
+func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, opts Options) (*Server, error) {
+	// Apply defaults for zero-valued fields.
+	if opts.ThumbnailCacheTTL == 0 {
+		opts.ThumbnailCacheTTL = 10 * time.Second
+	}
+	if opts.ThumbnailWidth == 0 {
+		opts.ThumbnailWidth = 480
+	}
+	if opts.ThumbnailJPEGQuality == 0 {
+		opts.ThumbnailJPEGQuality = 5
+	}
+	if opts.ThumbnailTimeout == 0 {
+		opts.ThumbnailTimeout = 15 * time.Second
+	}
+	if opts.SessionTTL == 0 {
+		opts.SessionTTL = 24 * time.Hour
+	}
+	if opts.LoginRateLimit == 0 {
+		opts.LoginRateLimit = 10
+	}
+	if opts.LoginRateWindow == 0 {
+		opts.LoginRateWindow = 15 * time.Minute
+	}
+	if opts.BrandName == "" {
+		opts.BrandName = "Bastion"
+	}
+	if opts.ThumbnailRefreshRate == 0 {
+		opts.ThumbnailRefreshRate = 15 * time.Second
+	}
+
 	s := &Server{
-		db:                   database,
-		relay:                r,
-		prom:                 p,
-		hub:                  hub,
-		srtAddr:              srtAddr,
-		publicHost:           publicHost,
-		thumbCache:           newThumbnailCache(10 * time.Second),
-		mediaInfoCache:       newMediaInfoCache(),
-		brandName:            "Bastion",
-		thumbnailRefreshRate: 15 * time.Second,
+		db:             database,
+		relay:          r,
+		prom:           p,
+		hub:            hub,
+		srtAddr:        opts.SRTAddr,
+		publicHost:     opts.PublicHost,
+		thumbCache:     newThumbnailCache(opts.ThumbnailCacheTTL),
+		mediaInfoCache: newMediaInfoCache(),
+
+		sessionTTL:   opts.SessionTTL,
+		loginLimiter: newLoginRateLimiter(opts.LoginRateLimit, opts.LoginRateWindow),
+		forceHTTPS:   opts.ForceHTTPS,
+
+		thumbnailEnabled:     opts.ThumbnailEnabled,
+		thumbnailWidth:       opts.ThumbnailWidth,
+		thumbnailJPEGQuality: opts.ThumbnailJPEGQuality,
+		thumbnailTimeout:     opts.ThumbnailTimeout,
+
+		mediaInfoEnabled: opts.MediaInfoEnabled,
+
+		externalPort:          opts.ExternalPort,
+		defaultMaxSubscribers: opts.DefaultMaxSubscribers,
+		brandName:             opts.BrandName,
+		thumbnailRefreshRate:  opts.ThumbnailRefreshRate,
 	}
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
 	}
-	if encKeyHex != "" {
-		key, err := hex.DecodeString(encKeyHex)
+	if opts.EncKeyHex != "" {
+		key, err := hex.DecodeString(opts.EncKeyHex)
 		if err != nil || (len(key) != 16 && len(key) != 32) {
 			return nil, fmt.Errorf("encryption_key must be 32 or 64 hex chars (16 or 32 bytes)")
 		}
@@ -82,7 +171,8 @@ func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, fro
 }
 
 // securityHeaders adds defensive HTTP headers to every response.
-func securityHeaders(next http.Handler) http.Handler {
+// When forceHTTPS is true on the Server, also emits Strict-Transport-Security.
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -90,16 +180,20 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:")
+		if s.forceHTTPS {
+			// 1 year, include subdomains. Safe to send unconditionally when
+			// the operator has explicitly opted into HTTPS-only.
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// loginLimiter allows 10 login attempts per IP per 15 minutes.
-var loginLimiter = newLoginRateLimiter(10, 15*time.Minute)
-
 // Start binds the HTTP server and serves requests until ctx is cancelled.
 func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) error {
-	go s.runMediaInfoProbes(ctx)
+	if s.mediaInfoEnabled {
+		go s.runMediaInfoProbes(ctx)
+	}
 
 	r := chi.NewRouter()
 
@@ -107,7 +201,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
-	r.Use(securityHeaders)
+	r.Use(s.securityHeaders)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{corsOrigin},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -117,7 +211,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 
 	// Public endpoints.
 	r.Get("/health", healthHandler)
-	r.Post("/api/v1/auth/login", loginLimiter.middleware(s.login))
+	r.Post("/api/v1/auth/login", s.loginLimiter.middleware(s.login))
 	r.Post("/api/v1/auth/setup", s.setup)
 	r.Get("/api/v1/auth/setup-status", s.setupStatus)
 	r.Get("/metrics", promhttp.HandlerFor(s.prom.Registry, promhttp.HandlerOpts{}).ServeHTTP)
@@ -220,25 +314,4 @@ func newID() string {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
-}
-
-// SetExternalPort overrides the port surfaced in dashboard SRT URLs (e.g.
-// 443 when the host NATs UDP 443 → container 9710). 0 leaves the value
-// parsed from srtAddr, which is the normal case for non-NATed deployments.
-func (s *Server) SetExternalPort(port int) { s.externalPort = port }
-
-// SetDefaultMaxSubscribers sets the default applied to new streams that
-// don't specify a max_subscribers value in their create request. 0 means
-// "no default" (use the unlimited sentinel already in the DB schema).
-func (s *Server) SetDefaultMaxSubscribers(n int) { s.defaultMaxSubscribers = n }
-
-// SetDashboardConfig configures dashboard-side display knobs surfaced
-// through /api/v1/auth/me.
-func (s *Server) SetDashboardConfig(brandName string, thumbnailRefreshRate time.Duration) {
-	if brandName != "" {
-		s.brandName = brandName
-	}
-	if thumbnailRefreshRate > 0 {
-		s.thumbnailRefreshRate = thumbnailRefreshRate
-	}
 }
