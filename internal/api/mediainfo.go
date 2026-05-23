@@ -148,7 +148,9 @@ func (s *Server) probeMediaInfo(ctx context.Context, name string) (*MediaInfo, e
 	if err != nil {
 		port = "9710"
 	}
-	srtURL := fmt.Sprintf("srt://127.0.0.1:%s?streamid=#!::m=request,r=%s",
+	// w=internal tells the relay this connection is one of our own workers,
+	// so it's excluded from the public subscriberCount and logged at debug.
+	srtURL := fmt.Sprintf("srt://127.0.0.1:%s?streamid=#!::m=request,r=%s,w=internal",
 		port, url.QueryEscape(name))
 
 	if stream, err := s.db.Streams.Get(name); err == nil &&
