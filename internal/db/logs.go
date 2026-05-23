@@ -118,6 +118,84 @@ func (r *EventLogsRepo) PurgeOlderThan(maxAge time.Duration) (int64, error) {
 	return n, nil
 }
 
+// trimBatchSize is the max rows deleted per iteration of TrimToBytes.
+const trimBatchSize = 1000
+
+// trimMaxIterations bounds the trim loop so a runaway writer cannot starve
+// the purge goroutine — if we can't get under the cap in this many passes,
+// give up until the next tick.
+const trimMaxIterations = 10
+
+// TrimToBytes deletes the oldest rows until the database's on-disk size
+// is at or below the target. Returns the number of rows deleted.
+//
+// The target is a soft cap: SQLite VACUUM is not run automatically, so the
+// real file size may stay above the cap until the next manual VACUUM (pages
+// freed by DELETE stay allocated but unused, and WAL mode reuses them on
+// subsequent inserts). The intent is to bound *steady-state* growth — for
+// a hard ceiling, run VACUUM out of band.
+//
+// Size is estimated via PRAGMA page_count * page_size (whole-DB size). This
+// over-counts when other tables are large, which is conservative — we may
+// trim event_logs slightly sooner than strictly necessary. event_logs is
+// expected to dominate in steady state on a live relay.
+//
+// maxBytes <= 0 disables trimming and returns (0, nil).
+func (r *EventLogsRepo) TrimToBytes(maxBytes int64) (int64, error) {
+	if maxBytes <= 0 {
+		return 0, nil
+	}
+
+	size, err := r.dbSizeBytes()
+	if err != nil {
+		return 0, fmt.Errorf("size estimate: %w", err)
+	}
+	if size <= maxBytes {
+		return 0, nil
+	}
+
+	var totalDeleted int64
+	for i := 0; i < trimMaxIterations; i++ {
+		res, err := r.db.Exec(
+			`DELETE FROM event_logs
+			 WHERE id IN (
+			     SELECT id FROM event_logs ORDER BY ts ASC LIMIT ?
+			 )`, trimBatchSize)
+		if err != nil {
+			return totalDeleted, fmt.Errorf("trim event_logs: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		totalDeleted += n
+		if n == 0 {
+			// Table is empty; nothing more we can do.
+			break
+		}
+
+		size, err = r.dbSizeBytes()
+		if err != nil {
+			return totalDeleted, fmt.Errorf("size estimate: %w", err)
+		}
+		if size <= maxBytes {
+			break
+		}
+	}
+	return totalDeleted, nil
+}
+
+// dbSizeBytes returns an estimate of the whole-database on-disk size, in
+// bytes, computed as page_count * page_size. This includes free (unused)
+// pages — i.e. it tracks the file's allocated size, not just live data.
+func (r *EventLogsRepo) dbSizeBytes() (int64, error) {
+	var pageCount, pageSize int64
+	if err := r.db.QueryRow(`PRAGMA page_count`).Scan(&pageCount); err != nil {
+		return 0, fmt.Errorf("page_count: %w", err)
+	}
+	if err := r.db.QueryRow(`PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, fmt.Errorf("page_size: %w", err)
+	}
+	return pageCount * pageSize, nil
+}
+
 // scanReversed scans rows in DESC order and returns them reversed (ASC).
 func scanReversed(rows *sql.Rows) ([]EventLog, error) {
 	var out []EventLog

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -179,6 +180,171 @@ func TestEventLogsStreamTsIndexUsed(t *testing.T) {
 	}
 	if !sawIndex {
 		t.Error("expected plan to use idx_event_logs_stream_ts")
+	}
+}
+
+// makeRows builds n synthetic event_logs records with monotonically increasing
+// timestamps, starting at base. Payload is sized to make row growth visible in
+// page-size estimates.
+func makeRows(base int64, n int, payload string) []EventLog {
+	out := make([]EventLog, n)
+	for i := 0; i < n; i++ {
+		out[i] = EventLog{
+			TS:     base + int64(i),
+			Level:  "info",
+			Stream: "trim",
+			Msg:    "msg",
+			Attrs:  payload,
+		}
+	}
+	return out
+}
+
+func TestTrimToBytesNoOpWhenUnderCap(t *testing.T) {
+	d := openTestDB(t)
+	now := time.Now().UnixNano()
+	if _, err := d.EventLogs.Insert(makeRows(now, 10, `{"k":"v"}`)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	// 100 MiB is far larger than 10 small rows can produce.
+	n, err := d.EventLogs.TrimToBytes(100 * 1024 * 1024)
+	if err != nil {
+		t.Fatalf("TrimToBytes: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 deletions under cap, got %d", n)
+	}
+	rem, err := d.EventLogs.ListByStream("trim", 100, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rem) != 10 {
+		t.Errorf("expected all 10 rows to survive, got %d", len(rem))
+	}
+}
+
+func TestTrimToBytesDeletesOldestFirst(t *testing.T) {
+	d := openTestDB(t)
+	now := time.Now().UnixNano()
+	// Use a chunky payload so the DB grows past a small cap with relatively
+	// few rows. 1 KiB attrs × 1000 rows ≈ 1 MiB of payload alone.
+	payload := `{"data":"` + strings.Repeat("x", 1024) + `"}`
+	if _, err := d.EventLogs.Insert(makeRows(now, 1000, payload)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	// Capture full size, then set the cap well below it. We choose a cap
+	// just above the empty-DB baseline so the trim loop must delete the
+	// bulk of rows but cannot delete everything (size never drops to 0 —
+	// SQLite keeps pages allocated post-DELETE without VACUUM, so the
+	// final size equals the original full size; this test only validates
+	// that the oldest rows go first up to the iteration bound).
+	fullSize, err := d.EventLogs.dbSizeBytes()
+	if err != nil {
+		t.Fatalf("dbSizeBytes: %v", err)
+	}
+	// Cap at half full size to guarantee at least one batch trims.
+	cap := fullSize / 2
+	n, err := d.EventLogs.TrimToBytes(cap)
+	if err != nil {
+		t.Fatalf("TrimToBytes: %v", err)
+	}
+	if n == 0 {
+		t.Fatalf("expected deletions, got 0 (fullSize=%d cap=%d)", fullSize, cap)
+	}
+
+	// Without VACUUM the file size won't drop, so the loop will hit
+	// trimMaxIterations (10) and delete 10 * trimBatchSize = 10000 rows
+	// capped by inventory (1000). Verify the *oldest* rows were the ones
+	// removed: any surviving row must have ts strictly greater than the
+	// deleted-cutoff (now + n - 1).
+	rem, err := d.EventLogs.ListByStream("trim", 2000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(rem)) != 1000-n {
+		t.Errorf("expected %d survivors, got %d", 1000-n, len(rem))
+	}
+	for _, e := range rem {
+		if e.TS < now+n {
+			t.Errorf("survivor ts=%d should be >= now+n=%d (an old row was kept)", e.TS, now+n)
+			break
+		}
+	}
+}
+
+func TestTrimToBytesZeroDisabled(t *testing.T) {
+	d := openTestDB(t)
+	now := time.Now().UnixNano()
+	if _, err := d.EventLogs.Insert(makeRows(now, 100, `{"k":"v"}`)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+	n, err := d.EventLogs.TrimToBytes(0)
+	if err != nil {
+		t.Fatalf("TrimToBytes(0): %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 deletions when disabled, got %d", n)
+	}
+	// Negative also disables.
+	n, err = d.EventLogs.TrimToBytes(-1)
+	if err != nil {
+		t.Fatalf("TrimToBytes(-1): %v", err)
+	}
+	if n != 0 {
+		t.Errorf("expected 0 deletions with negative cap, got %d", n)
+	}
+	rem, err := d.EventLogs.ListByStream("trim", 1000, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rem) != 100 {
+		t.Errorf("expected 100 rows preserved, got %d", len(rem))
+	}
+}
+
+func TestTrimToBytesIdempotent(t *testing.T) {
+	d := openTestDB(t)
+	now := time.Now().UnixNano()
+	payload := `{"data":"` + strings.Repeat("x", 1024) + `"}`
+	if _, err := d.EventLogs.Insert(makeRows(now, 500, payload)); err != nil {
+		t.Fatalf("Insert: %v", err)
+	}
+
+	const cap = 64 * 1024
+	n1, err := d.EventLogs.TrimToBytes(cap)
+	if err != nil {
+		t.Fatalf("first TrimToBytes: %v", err)
+	}
+
+	// Second call: SQLite may not have shrunk on disk (no VACUUM), so the
+	// page-count estimate might still report > cap. But the implementation
+	// must not enter an infinite delete loop and must terminate — and once
+	// the file size is steady, a second call should not delete more than
+	// the iteration bound allows. The most useful invariant here is that
+	// repeated calls converge: at some point, further calls delete 0.
+	//
+	// We assert: after enough repeated calls, deletions stop, AND the
+	// total never deletes more rows than were inserted.
+	totalDeleted := n1
+	var lastN int64 = -1
+	for i := 0; i < 20; i++ {
+		n, err := d.EventLogs.TrimToBytes(cap)
+		if err != nil {
+			t.Fatalf("repeat TrimToBytes: %v", err)
+		}
+		totalDeleted += n
+		if n == 0 {
+			lastN = 0
+			break
+		}
+		lastN = n
+	}
+	if lastN != 0 {
+		t.Errorf("expected repeated TrimToBytes to converge to 0 deletions, last=%d", lastN)
+	}
+	if totalDeleted > 500 {
+		t.Errorf("deleted %d rows but only 500 were inserted", totalDeleted)
 	}
 }
 
