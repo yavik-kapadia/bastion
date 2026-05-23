@@ -85,13 +85,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 		Broadcaster: bastionlog.HubBroadcaster{
 			Send: hub.Broadcast,
 		},
-		MinLevel: slog.LevelInfo,
+		MinLevel: dbLogLevel(cfg.Logging),
 	})
 	slog.SetDefault(slog.New(dbHandler))
 	defer dbHandler.Close()
 
-	// Housekeeping: purge logs older than 24h every 5 minutes.
-	go runLogPurge(ctx, database)
+	// Housekeeping: purge logs older than configured retention every 5 minutes.
+	go runLogPurge(ctx, database, cfg.Logging.EventRetention)
 
 	// Decode optional at-rest encryption key.
 	var encKey []byte
@@ -110,8 +110,9 @@ func run(ctx context.Context, cfg *config.Config) error {
 	r := relay.New(cfg.SRT.ListenAddr, cfg.SRT.SubscriberBufSize, func(sid *relay.StreamID, addr net.Addr) (string, error) {
 		return guard.Authorize(sid, addr)
 	}, relay.Config{
-		Latency: cfg.SRT.Latency,
-		MaxBW:   cfg.SRT.MaxBandwidth,
+		Latency:              cfg.SRT.Latency,
+		MaxBW:                cfg.SRT.MaxBandwidth,
+		MaxConcurrentStreams: cfg.SRT.MaxConcurrentStreams,
 	})
 
 	// Auth guard: enforces per-stream encryption, publisher ACLs, subscriber caps.
@@ -126,6 +127,9 @@ func run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("new api server: %w", err)
 	}
+	apiSrv.SetExternalPort(cfg.SRT.ExternalPort)
+	apiSrv.SetDefaultMaxSubscribers(cfg.SRT.DefaultMaxSubscribers)
+	apiSrv.SetDashboardConfig(cfg.Dashboard.BrandName, cfg.Dashboard.ThumbnailRefreshRate)
 
 	// Start relay and API concurrently.
 	errCh := make(chan error, 2)
@@ -140,10 +144,13 @@ func run(ctx context.Context, cfg *config.Config) error {
 	}
 }
 
-// runLogPurge deletes event_logs older than 24h every 5 minutes.
-// Stops when ctx is cancelled.
-func runLogPurge(ctx context.Context, database *db.DB) {
-	const ttl = 24 * time.Hour
+// runLogPurge deletes event_logs older than ttl every 5 minutes.
+// Stops when ctx is cancelled. ttl<=0 disables the purge.
+func runLogPurge(ctx context.Context, database *db.DB, ttl time.Duration) {
+	if ttl <= 0 {
+		slog.Info("event_logs: retention disabled (logging.event_retention=0)")
+		return
+	}
 	const interval = 5 * time.Minute
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -166,6 +173,25 @@ func runLogPurge(ctx context.Context, database *db.DB) {
 			}
 			slog.Debug("event_logs: purged stale rows", "deleted", n)
 		}
+	}
+}
+
+// dbLogLevel resolves logging.event_db_level into a slog.Level. Empty falls
+// back to the main logging.level.
+func dbLogLevel(cfg config.LoggingConfig) slog.Level {
+	name := cfg.EventDBLevel
+	if name == "" {
+		name = cfg.Level
+	}
+	switch name {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
 	}
 }
 

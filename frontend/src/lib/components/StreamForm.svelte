@@ -25,6 +25,7 @@
   let maxSubscribers = initial.max_subscribers ?? 0;
   let allowedPublishers = (initial.allowed_publishers ?? []).join('\n');
   let enabled = initial.enabled ?? true;
+  let latencyMs = initial.latency_ms ?? 0;
 
   function handleSubmit() {
     const payload: StreamPayload = {
@@ -36,7 +37,8 @@
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean),
-      enabled
+      enabled,
+      latency_ms: latencyMs
     };
     if (passphrase) payload.passphrase = passphrase;
     dispatch('submit', payload);
@@ -143,6 +145,27 @@
           bind:value={allowedPublishers}
           placeholder="192.168.1.0/24&#10;10.0.0.1"
         ></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="border-t border-gray-800 pt-5">
+    <h3 class="text-sm font-medium text-gray-400 mb-3">Latency</h3>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <label class="label" for="latency">Suggested Latency (ms)</label>
+        <input
+          id="latency"
+          class="input"
+          type="number"
+          bind:value={latencyMs}
+          min="0"
+          max="30000"
+          placeholder="0 = inherit global default"
+        />
+        <p class="mt-1 text-xs text-gray-500">
+          Surfaced in the Quick Start URL. Higher values give viewers more retransmit headroom; 2000-4000ms is typical for WAN streams. 0 = use the server-wide default.
+        </p>
       </div>
     </div>
   </div>

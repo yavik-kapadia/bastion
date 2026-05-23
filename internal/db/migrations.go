@@ -64,4 +64,10 @@ var migrations = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_event_logs_stream_ts ON event_logs(stream, ts DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_event_logs_ts ON event_logs(ts)`,
+
+	// v3: per-stream SRT latency override (milliseconds). 0 = inherit the
+	// global default from bastion.toml. Surfaced in the dashboard form +
+	// Quick Start URL generator so clients see the right `&latency=...` for
+	// their stream.
+	`ALTER TABLE streams ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0`,
 }

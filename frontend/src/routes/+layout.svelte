@@ -28,6 +28,9 @@
   let isPublic = $derived(publicRoutes.includes(currentPath));
 
   const buildVersion = import.meta.env.VITE_BASTION_VERSION ?? 'dev';
+  // Brand name is server-configured via [dashboard].brand_name. Falls back
+  // to 'Bastion' on login/setup pages (no auth yet) and for older servers.
+  let brand = $derived(getAuth()?.brand_name || 'Bastion');
 </script>
 
 {#if isPublic || !data.auth}
@@ -36,7 +39,7 @@
       {@render children()}
     </div>
     <footer class="text-center text-xs text-gray-600 py-3">
-      Bastion v{buildVersion}
+      {brand} v{buildVersion}
     </footer>
   </div>
 {:else}
@@ -49,7 +52,7 @@
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            Bastion
+            {brand}
           </a>
           <a href="/" class="text-sm {currentPath === '/' ? 'text-sky-400' : 'text-gray-400 hover:text-gray-100'} transition-colors">
             Dashboard
@@ -80,7 +83,7 @@
     </main>
 
     <footer class="text-center text-xs text-gray-600 py-3">
-      Bastion v{buildVersion}
+      {brand} v{buildVersion}
     </footer>
   </div>
 {/if}

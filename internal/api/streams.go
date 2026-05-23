@@ -23,6 +23,7 @@ type streamRequest struct {
 	MaxSubscribers    int      `json:"max_subscribers"`
 	AllowedPublishers []string `json:"allowed_publishers"`
 	Enabled           *bool    `json:"enabled"`
+	LatencyMS         int      `json:"latency_ms"` // 0 = inherit global default
 }
 
 // listStreams GET /api/v1/streams
@@ -87,15 +88,26 @@ func (s *Server) createStream(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		enabled = *req.Enabled
 	}
+	// If the caller didn't specify a limit, apply the server's default.
+	// 0 still means unlimited; the default only fills in unset.
+	maxSubs := req.MaxSubscribers
+	if maxSubs == 0 && s.defaultMaxSubscribers > 0 {
+		maxSubs = s.defaultMaxSubscribers
+	}
+	if req.LatencyMS < 0 || req.LatencyMS > 30000 {
+		respondError(w, http.StatusBadRequest, "latency_ms must be 0–30000 (0 = inherit global default)")
+		return
+	}
 	stream := &model.Stream{
 		ID:                newID(),
 		Name:              req.Name,
 		Description:       req.Description,
 		Passphrase:        encPass,
 		KeyLength:         req.KeyLength,
-		MaxSubscribers:    req.MaxSubscribers,
+		MaxSubscribers:    maxSubs,
 		AllowedPublishers: req.AllowedPublishers,
 		Enabled:           enabled,
+		LatencyMS:         req.LatencyMS,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -202,6 +214,11 @@ func (s *Server) updateStream(w http.ResponseWriter, r *http.Request) {
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
 	}
+	if req.LatencyMS < 0 || req.LatencyMS > 30000 {
+		respondError(w, http.StatusBadRequest, "latency_ms must be 0–30000 (0 = inherit global default)")
+		return
+	}
+	existing.LatencyMS = req.LatencyMS
 
 	if err := s.db.Streams.Update(existing); err != nil {
 		respondError(w, http.StatusInternalServerError, "update failed")
