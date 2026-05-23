@@ -23,10 +23,10 @@ func (r *StreamRepo) Create(s *model.Stream) error {
 	}
 	_, err = r.db.Exec(`
 		INSERT INTO streams
-			(id, name, description, passphrase_enc, key_length, max_subscribers, allowed_publishers, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			(id, name, description, passphrase_enc, key_length, max_subscribers, allowed_publishers, enabled, latency_ms, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.Name, s.Description, s.Passphrase, s.KeyLength,
-		s.MaxSubscribers, string(apJSON), boolInt(s.Enabled),
+		s.MaxSubscribers, string(apJSON), boolInt(s.Enabled), s.LatencyMS,
 		s.CreatedAt.UTC(), s.UpdatedAt.UTC(),
 	)
 	if err != nil {
@@ -39,7 +39,7 @@ func (r *StreamRepo) Create(s *model.Stream) error {
 func (r *StreamRepo) Get(name string) (*model.Stream, error) {
 	row := r.db.QueryRow(`
 		SELECT id, name, description, passphrase_enc, key_length, max_subscribers,
-		       allowed_publishers, enabled, created_at, updated_at
+		       allowed_publishers, enabled, latency_ms, created_at, updated_at
 		FROM streams WHERE name = ?`, name)
 	return scanStream(row)
 }
@@ -48,7 +48,7 @@ func (r *StreamRepo) Get(name string) (*model.Stream, error) {
 func (r *StreamRepo) GetByID(id string) (*model.Stream, error) {
 	row := r.db.QueryRow(`
 		SELECT id, name, description, passphrase_enc, key_length, max_subscribers,
-		       allowed_publishers, enabled, created_at, updated_at
+		       allowed_publishers, enabled, latency_ms, created_at, updated_at
 		FROM streams WHERE id = ?`, id)
 	return scanStream(row)
 }
@@ -57,7 +57,7 @@ func (r *StreamRepo) GetByID(id string) (*model.Stream, error) {
 func (r *StreamRepo) List() ([]*model.Stream, error) {
 	rows, err := r.db.Query(`
 		SELECT id, name, description, passphrase_enc, key_length, max_subscribers,
-		       allowed_publishers, enabled, created_at, updated_at
+		       allowed_publishers, enabled, latency_ms, created_at, updated_at
 		FROM streams ORDER BY name ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("list streams: %w", err)
@@ -85,11 +85,11 @@ func (r *StreamRepo) Update(s *model.Stream) error {
 		UPDATE streams SET
 			name = ?, description = ?, passphrase_enc = ?, key_length = ?,
 			max_subscribers = ?, allowed_publishers = ?, enabled = ?,
-			updated_at = ?
+			latency_ms = ?, updated_at = ?
 		WHERE id = ?`,
 		s.Name, s.Description, s.Passphrase, s.KeyLength,
 		s.MaxSubscribers, string(apJSON), boolInt(s.Enabled),
-		time.Now().UTC(), s.ID,
+		s.LatencyMS, time.Now().UTC(), s.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update stream %q: %w", s.ID, err)
@@ -121,16 +121,16 @@ type scanner interface {
 
 func scanStream(s scanner) (*model.Stream, error) {
 	var (
-		stream   model.Stream
-		apJSON   string
-		enabled  int
-		created  time.Time
-		updated  time.Time
+		stream  model.Stream
+		apJSON  string
+		enabled int
+		created time.Time
+		updated time.Time
 	)
 	err := s.Scan(
 		&stream.ID, &stream.Name, &stream.Description,
 		&stream.Passphrase, &stream.KeyLength, &stream.MaxSubscribers,
-		&apJSON, &enabled, &created, &updated,
+		&apJSON, &enabled, &stream.LatencyMS, &created, &updated,
 	)
 	if err != nil {
 		return nil, err

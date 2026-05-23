@@ -6,6 +6,7 @@
   import { metricsStore } from '$lib/ws';
   import { isManager } from '$lib/stores/auth.svelte';
   import { getHostUrl, setHostUrl, resolvedHost } from '$lib/stores/settings.svelte';
+  import { getAuth } from '$lib/stores/auth.svelte';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
   import LogTail from '$lib/components/LogTail.svelte';
@@ -33,14 +34,28 @@
 
   let host = $derived(resolvedHost() || '<host>');
 
+  // External SRT port surfaced to users in the Quick Start commands.
+  // Defaults to 9710 (the standard SRT relay port); admins can override via
+  // `[srt].external_port` in bastion.toml when they NAT a different host
+  // port (e.g. 443/udp to look like QUIC for restrictive firewalls).
+  let externalPort = $derived(getAuth()?.external_port || 9710);
+
   let hasPass = $derived(stream?.key_length && stream.key_length > 0);
   let displaySuffix = $derived(hasPass ? '&passphrase=••••••••' : '');
 
+  // SRT latency suffix appended to URL when the stream has a per-stream
+  // override set. The relay's listener latency is the floor; the caller
+  // can ask for more via &latency=<microseconds>. Bastion negotiates the
+  // higher of the two, which is what we want for WAN viewers.
+  let latencySuffix = $derived(
+    stream?.latency_ms && stream.latency_ms > 0 ? `&latency=${stream.latency_ms * 1000}` : ''
+  );
+
   let publishDisplay = $derived(
-    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${displaySuffix}"`
+    `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${displaySuffix}${latencySuffix}"`
   );
   let subscribeDisplay = $derived(
-    `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${displaySuffix}"`
+    `ffplay "srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${displaySuffix}${latencySuffix}"`
   );
 
   // Fetch passphrase on demand and build the real command for clipboard
@@ -54,10 +69,11 @@
         passSuffix = '&passphrase=<pass>';
       }
     }
+    const lat = stream?.latency_ms && stream.latency_ms > 0 ? `&latency=${stream.latency_ms * 1000}` : '';
     if (mode === 'publish') {
-      return `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:9710?streamid=#!::m=publish,r=${name}${passSuffix}"`;
+      return `ffmpeg -re -i input.ts -c copy -f mpegts "srt://${host}:${externalPort}?streamid=#!::m=publish,r=${name}${passSuffix}${lat}"`;
     }
-    return `ffplay "srt://${host}:9710?streamid=#!::m=request,r=${name}${passSuffix}"`;
+    return `ffplay "srt://${host}:${externalPort}?streamid=#!::m=request,r=${name}${passSuffix}${lat}"`;
   }
 
   function refreshThumbnail() {
@@ -75,9 +91,12 @@
     }
   });
 
+  // Refresh cadence is configured server-side (cfg.Dashboard.ThumbnailRefreshRate)
+  // and surfaced via /auth/me. Falls back to 15s if older server / not set.
+  const refreshMs = getAuth()?.thumbnail_refresh_ms ?? 15000;
   const thumbnailInterval = setInterval(() => {
     if (hasPublisher) refreshThumbnail();
-  }, 15000);
+  }, refreshMs);
 
   onDestroy(() => {
     clearInterval(thumbnailInterval);

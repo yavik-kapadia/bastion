@@ -43,6 +43,13 @@ type Server struct {
 	thumbCache     *thumbnailCache
 	mediaInfoCache *mediaInfoCache
 	httpServer     *http.Server
+
+	// Dashboard-side knobs, defaulted in NewServer, optionally overridden
+	// from cmd/bastion/main.go via setters before Start() runs.
+	externalPort          int           // host port surfaced to clients in SRT URLs (0 = use the port from srtAddr)
+	defaultMaxSubscribers int           // applied to new streams that don't specify a max
+	brandName             string        // dashboard brand
+	thumbnailRefreshRate  time.Duration // how often the detail page re-fetches the thumbnail
 }
 
 // NewServer constructs an API Server.
@@ -50,14 +57,16 @@ type Server struct {
 // Pass nil to disable the dashboard (API-only mode).
 func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, frontendFS fs.FS, encKeyHex string, srtAddr string, publicHost string) (*Server, error) {
 	s := &Server{
-		db:             database,
-		relay:          r,
-		prom:           p,
-		hub:            hub,
-		srtAddr:        srtAddr,
-		publicHost:     publicHost,
-		thumbCache:     newThumbnailCache(10 * time.Second),
-		mediaInfoCache: newMediaInfoCache(),
+		db:                   database,
+		relay:                r,
+		prom:                 p,
+		hub:                  hub,
+		srtAddr:              srtAddr,
+		publicHost:           publicHost,
+		thumbCache:           newThumbnailCache(10 * time.Second),
+		mediaInfoCache:       newMediaInfoCache(),
+		brandName:            "Bastion",
+		thumbnailRefreshRate: 15 * time.Second,
 	}
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
@@ -211,4 +220,25 @@ func newID() string {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+}
+
+// SetExternalPort overrides the port surfaced in dashboard SRT URLs (e.g.
+// 443 when the host NATs UDP 443 → container 9710). 0 leaves the value
+// parsed from srtAddr, which is the normal case for non-NATed deployments.
+func (s *Server) SetExternalPort(port int) { s.externalPort = port }
+
+// SetDefaultMaxSubscribers sets the default applied to new streams that
+// don't specify a max_subscribers value in their create request. 0 means
+// "no default" (use the unlimited sentinel already in the DB schema).
+func (s *Server) SetDefaultMaxSubscribers(n int) { s.defaultMaxSubscribers = n }
+
+// SetDashboardConfig configures dashboard-side display knobs surfaced
+// through /api/v1/auth/me.
+func (s *Server) SetDashboardConfig(brandName string, thumbnailRefreshRate time.Duration) {
+	if brandName != "" {
+		s.brandName = brandName
+	}
+	if thumbnailRefreshRate > 0 {
+		s.thumbnailRefreshRate = thumbnailRefreshRate
+	}
 }

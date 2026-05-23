@@ -24,6 +24,7 @@ export interface Stream {
   has_publisher: boolean;
   subscriber_count: number;
   media_info?: MediaInfo;
+  latency_ms: number; // 0 = inherit global default
   created_at: string;
   updated_at: string;
 }
@@ -36,6 +37,7 @@ export interface StreamPayload {
   max_subscribers?: number;
   allowed_publishers?: string[];
   enabled?: boolean;
+  latency_ms?: number;
 }
 
 export interface User {
@@ -50,6 +52,9 @@ export interface AuthUser {
   username: string;
   role: string;
   public_host?: string;
+  external_port?: number;          // host port for SRT URLs in Quick Start (0 = default 9710)
+  brand_name?: string;             // dashboard brand (defaults to "Bastion")
+  thumbnail_refresh_ms?: number;   // dashboard thumbnail poll interval in ms
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

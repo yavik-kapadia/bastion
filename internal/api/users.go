@@ -84,13 +84,18 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 // me GET /api/v1/auth/me — returns the current user's info from their session cookie or token.
+// Also carries dashboard-side knobs the frontend needs (external_port for SRT URL gen,
+// brand_name for nav rendering, thumbnail_refresh_rate for the polling cadence).
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	u := userFromCtx(r.Context())
 	respond(w, http.StatusOK, map[string]any{
-		"user_id":     u.ID,
-		"username":    u.Username,
-		"role":        u.Role,
-		"public_host": s.publicHost,
+		"user_id":                 u.ID,
+		"username":                u.Username,
+		"role":                    u.Role,
+		"public_host":             s.publicHost,
+		"external_port":           s.externalPort,
+		"brand_name":              s.brandName,
+		"thumbnail_refresh_ms":    s.thumbnailRefreshRate.Milliseconds(),
 	})
 }
 

@@ -25,6 +25,10 @@ type Config struct {
 	// MaxBW is the maximum sending bandwidth in bytes/sec.
 	// -1 = unlimited (gosrt default).
 	MaxBW int64
+	// MaxConcurrentStreams caps the number of distinct streams the relay
+	// will track at once. Excess publish/request attempts get rejected.
+	// 0 = unlimited.
+	MaxConcurrentStreams int
 }
 
 // Relay is the core SRT relay engine: it accepts incoming connections,
@@ -184,6 +188,13 @@ func (r *Relay) handlePublisher(ctx context.Context, conn srt.Conn, name string)
 	r.mu.Lock()
 	s, exists := r.streams[name]
 	if !exists {
+		if r.cfg.MaxConcurrentStreams > 0 && len(r.streams) >= r.cfg.MaxConcurrentStreams {
+			r.mu.Unlock()
+			slog.Warn("relay: publisher rejected — max_concurrent_streams reached",
+				"stream", name, "limit", r.cfg.MaxConcurrentStreams)
+			conn.Close()
+			return
+		}
 		s = newStream(name, r.bufSize)
 		r.streams[name] = s
 	}
@@ -223,6 +234,13 @@ func (r *Relay) handleSubscriber(ctx context.Context, conn srt.Conn, name string
 	r.mu.Lock()
 	s, exists := r.streams[name]
 	if !exists {
+		if r.cfg.MaxConcurrentStreams > 0 && len(r.streams) >= r.cfg.MaxConcurrentStreams {
+			r.mu.Unlock()
+			slog.Warn("relay: subscriber rejected — max_concurrent_streams reached",
+				"stream", name, "limit", r.cfg.MaxConcurrentStreams)
+			conn.Close()
+			return
+		}
 		// Create a placeholder stream so the subscriber can wait for a publisher.
 		s = newStream(name, r.bufSize)
 		r.streams[name] = s
