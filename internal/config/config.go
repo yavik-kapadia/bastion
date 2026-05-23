@@ -66,10 +66,16 @@ type LoggingConfig struct {
 // ThumbnailConfig controls the per-stream thumbnail capture pipeline.
 type ThumbnailConfig struct {
 	Enabled     bool          `toml:"enabled"`
-	CacheTTL    time.Duration `toml:"cache_ttl"`     // how long a captured frame is reused
-	Width       int           `toml:"width"`         // scaled output width in px (height keeps aspect)
-	JPEGQuality int           `toml:"jpeg_quality"`  // 1 (best) – 31 (worst), mjpeg semantics
-	Timeout     time.Duration `toml:"timeout"`       // ffmpeg invocation timeout
+	CacheTTL    time.Duration `toml:"cache_ttl"`    // how long a captured frame is reused
+	Width       int           `toml:"width"`        // scaled output width in px (height keeps aspect)
+	JPEGQuality int           `toml:"jpeg_quality"` // 1 (best) – 31 (worst), mjpeg semantics
+	// Format: "jpeg" (default) or "webp". WebP gives smaller files at
+	// the same visual quality and supports alpha; safe in all modern
+	// browsers but some legacy <img> consumers can't render it.
+	Format      string        `toml:"format"`
+	// WebPQuality: 0 (worst) – 100 (best). Only used when Format = "webp".
+	WebPQuality int           `toml:"webp_quality"`
+	Timeout     time.Duration `toml:"timeout"`      // ffmpeg invocation timeout
 }
 
 // MediaInfoConfig controls the per-publisher ffprobe.
@@ -143,6 +149,8 @@ func defaults() *Config {
 			CacheTTL:    10 * time.Second,
 			Width:       480,
 			JPEGQuality: 5,
+			Format:      "jpeg",
+			WebPQuality: 75,
 			Timeout:     15 * time.Second,
 		},
 		MediaInfo: MediaInfoConfig{
@@ -179,6 +187,15 @@ func (c *Config) validate() error {
 	}
 	if c.Thumbnail.CacheTTL < 0 {
 		return fmt.Errorf("thumbnail.cache_ttl must be non-negative")
+	}
+	switch c.Thumbnail.Format {
+	case "", "jpeg", "webp":
+		// ok
+	default:
+		return fmt.Errorf("thumbnail.format must be \"jpeg\" or \"webp\", got %q", c.Thumbnail.Format)
+	}
+	if c.Thumbnail.WebPQuality < 0 || c.Thumbnail.WebPQuality > 100 {
+		return fmt.Errorf("thumbnail.webp_quality must be 0–100")
 	}
 	if c.Logging.EventRetention < 0 {
 		return fmt.Errorf("logging.event_retention must be non-negative")

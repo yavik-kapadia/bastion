@@ -89,13 +89,29 @@ max_db_size = 0
 
 [thumbnail]
 # Per-stream thumbnail capture. Disable on resource-constrained boxes.
-# NOTE: these knobs are wired through the schema but the actual ffmpeg
-# invocation still uses the existing defaults; full wiring is queued in
-# a follow-up PR (the API NewServer refactor).
 enabled = true
+
+# How long a captured frame is cached before re-grabbing. Lower = fresher
+# but more ffmpeg work per stream. For "live preview" feel set to "1s";
+# for "snapshot every now and then" set to "10s" or longer.
 cache_ttl = "10s"
+
+# Scaled output width in px (height keeps aspect ratio). 480 is dashboard-
+# thumbnail sized; 1280 is HD-preview sized at ~4x the bytes.
 width = 480
+
+# Output format: "jpeg" (default; widest compatibility) or "webp" (smaller
+# files at same visual quality, alpha support, fine in every modern
+# browser).
+format = "jpeg"
+
+# JPEG quality: 1 (best) – 31 (worst). Only used when format = "jpeg".
 jpeg_quality = 5
+
+# WebP quality: 0 (worst) – 100 (best). Only used when format = "webp".
+webp_quality = 75
+
+# ffmpeg invocation timeout. Must exceed the encoder's keyframe interval.
 timeout = "15s"
 
 [media_info]
