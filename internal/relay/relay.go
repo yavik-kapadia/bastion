@@ -122,11 +122,25 @@ func (r *Relay) handleRequest(ctx context.Context, req srt.ConnRequest) {
 		return
 	}
 
-	slog.Info("relay: new connection",
-		"stream", sid.Name,
-		"mode", sid.Mode,
-		"remote", req.RemoteAddr(),
-	)
+	// Subscribers tagged w=internal in the streamid are our own workers
+	// (thumbnail capture, ffprobe media-info). They're invisible to the
+	// public subscriber count and logged at debug level only — keeps the
+	// operational log clean of the every-10s thumbnail-fetch chatter.
+	internal := sid.Mode == ModeRequest && sid.Internal
+
+	if internal {
+		slog.Debug("relay: internal worker connection",
+			"stream", sid.Name,
+			"mode", sid.Mode,
+			"remote", req.RemoteAddr(),
+		)
+	} else {
+		slog.Info("relay: new connection",
+			"stream", sid.Name,
+			"mode", sid.Mode,
+			"remote", req.RemoteAddr(),
+		)
+	}
 
 	// Run auth / encryption lookup.
 	passphrase := sid.Passphrase
@@ -162,7 +176,7 @@ func (r *Relay) handleRequest(ctx context.Context, req srt.ConnRequest) {
 	case ModePublish:
 		r.handlePublisher(ctx, conn, sid.Name)
 	case ModeRequest:
-		r.handleSubscriber(ctx, conn, sid.Name)
+		r.handleSubscriber(ctx, conn, sid.Name, internal)
 	}
 }
 
@@ -205,7 +219,7 @@ func (r *Relay) gcStream(name string) {
 	delete(r.streams, name)
 }
 
-func (r *Relay) handleSubscriber(ctx context.Context, conn srt.Conn, name string) {
+func (r *Relay) handleSubscriber(ctx context.Context, conn srt.Conn, name string, internal bool) {
 	r.mu.Lock()
 	s, exists := r.streams[name]
 	if !exists {
@@ -215,6 +229,12 @@ func (r *Relay) handleSubscriber(ctx context.Context, conn srt.Conn, name string
 	}
 	r.mu.Unlock()
 
+	if internal {
+		s.AddInternalSubscriber(ctx, conn)
+		slog.Debug("relay: internal worker attached", "stream", name, "sub_id", "internal")
+		return
+	}
 	subID := s.AddSubscriber(ctx, conn)
 	slog.Info("relay: subscriber added", "stream", name, "sub_id", subID)
 }
+

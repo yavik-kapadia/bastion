@@ -32,6 +32,41 @@ func TestParseStreamID(t *testing.T) {
 		{"publish/", ModePublish, "", "", "must not be empty"},
 	}
 
+	// w=internal marks our own thumbnail / ffprobe workers — verified
+	// separately because we also assert sid.Internal below.
+	t.Run("w=internal sets Internal flag", func(t *testing.T) {
+		sid, err := ParseStreamID("#!::m=request,r=mystream,w=internal")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !sid.Internal {
+			t.Error("expected Internal=true for w=internal")
+		}
+		if sid.Name != "mystream" || sid.Mode != ModeRequest {
+			t.Errorf("other fields garbled: name=%q mode=%v", sid.Name, sid.Mode)
+		}
+	})
+
+	t.Run("w defaults to non-internal", func(t *testing.T) {
+		sid, err := ParseStreamID("#!::m=request,r=mystream")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if sid.Internal {
+			t.Error("expected Internal=false when w= is absent")
+		}
+	})
+
+	t.Run("unknown w value treated as non-internal", func(t *testing.T) {
+		sid, err := ParseStreamID("#!::m=request,r=mystream,w=external")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if sid.Internal {
+			t.Error("expected Internal=false for w=external")
+		}
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
 			sid, err := ParseStreamID(tt.input)

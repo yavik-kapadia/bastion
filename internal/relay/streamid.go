@@ -25,6 +25,7 @@ type StreamID struct {
 	Mode       Mode
 	Name       string // stream resource name
 	Passphrase string // optional auth passphrase embedded in stream ID
+	Internal   bool   // worker connection (w=internal); excluded from subscriber count, debug-logged
 }
 
 // ParseStreamID parses both the modern SRT Access Control format
@@ -71,6 +72,14 @@ func parseModern(kv string) (*StreamID, error) {
 			sid.Name = strings.TrimSpace(v)
 		case "s":
 			sid.Passphrase = strings.TrimSpace(v)
+		case "w":
+			// w=internal marks the connection as one of our own workers
+			// (thumbnail capture, ffprobe). External clients should never
+			// set this; if they do, the worst they get is being hidden
+			// from the public viewer count for their own session.
+			if strings.TrimSpace(v) == "internal" {
+				sid.Internal = true
+			}
 		}
 	}
 	if sid.Name == "" {

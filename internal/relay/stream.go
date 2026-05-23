@@ -63,12 +63,16 @@ type Stream struct {
 // path (writePump exit or publisher disconnect) initiates the close.
 // done is closed when the writePump goroutine exits, letting relayLoop's
 // defer wait on a bounded set of subs without coupling lifetimes globally.
+// internal=true subscribers (thumbnail capture, ffprobe media-info) are
+// excluded from subscriberCount so the public stat tracks real viewers,
+// and are logged at debug level only.
 type subscriber struct {
 	id        uint32
 	conn      srt.Conn
 	ch        chan []byte
 	done      chan struct{}
 	closeOnce sync.Once
+	internal  bool
 }
 
 func (sub *subscriber) closeCh() {
@@ -119,21 +123,36 @@ func (s *Stream) WaitForPublisherExit() {
 	}
 }
 
-// AddSubscriber registers a new subscriber and starts its write pump.
-// Returns the subscriber ID.
+// AddSubscriber registers a new external viewer and starts its write pump.
+// Returns the subscriber ID. Bumps subscriberCount.
 func (s *Stream) AddSubscriber(ctx context.Context, conn srt.Conn) uint32 {
+	return s.addSubscriber(ctx, conn, false)
+}
+
+// AddInternalSubscriber registers an internal worker (thumbnail capture,
+// ffprobe media-info) as a subscriber. Behavior is identical to
+// AddSubscriber except subscriberCount is NOT bumped — these connections
+// are invisible to the public viewer count.
+func (s *Stream) AddInternalSubscriber(ctx context.Context, conn srt.Conn) uint32 {
+	return s.addSubscriber(ctx, conn, true)
+}
+
+func (s *Stream) addSubscriber(ctx context.Context, conn srt.Conn, internal bool) uint32 {
 	id := atomic.AddUint32(&s.nextSubID, 1)
 	sub := &subscriber{
-		id:   id,
-		conn: conn,
-		ch:   make(chan []byte, s.bufSize),
-		done: make(chan struct{}),
+		id:       id,
+		conn:     conn,
+		ch:       make(chan []byte, s.bufSize),
+		done:     make(chan struct{}),
+		internal: internal,
 	}
 
 	s.mu.Lock()
 	s.subscribers[id] = sub
 	s.mu.Unlock()
-	s.subscriberCount.Add(1)
+	if !internal {
+		s.subscriberCount.Add(1)
+	}
 
 	go s.writePump(ctx, sub)
 	return id
@@ -148,7 +167,9 @@ func (s *Stream) RemoveSubscriber(id uint32) {
 	}
 	s.mu.Unlock()
 	if ok {
-		s.subscriberCount.Add(-1)
+		if !sub.internal {
+			s.subscriberCount.Add(-1)
+		}
 		sub.closeCh()
 		sub.conn.Close()
 	}
