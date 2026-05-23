@@ -33,6 +33,12 @@ func (f *fakeRelayWithPub) StreamStats(name string) (relay.StreamStats, bool) {
 	}
 	return relay.StreamStats{}, false
 }
+func (f *fakeRelayWithPub) StreamSubscribers(name string) ([]relay.SubscriberStats, bool) {
+	if name == "live" {
+		return nil, true
+	}
+	return nil, false
+}
 
 // buildOptsServer wires a minimal router with the auth-protected thumbnail
 // + login routes, using the given Options.

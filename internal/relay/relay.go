@@ -129,6 +129,19 @@ func (r *Relay) StreamStats(name string) (StreamStats, bool) {
 	return s.Stats(), true
 }
 
+// StreamSubscribers returns per-subscriber stats for a stream. External
+// subscribers only (internal workers are excluded). Empty slice + false when
+// the stream doesn't exist.
+func (r *Relay) StreamSubscribers(name string) ([]SubscriberStats, bool) {
+	r.mu.RLock()
+	s, ok := r.streams[name]
+	r.mu.RUnlock()
+	if !ok {
+		return nil, false
+	}
+	return s.Subscribers(), true
+}
+
 // handleRequest processes a single incoming SRT connection request.
 func (r *Relay) handleRequest(ctx context.Context, req srt.ConnRequest) {
 	sid, err := ParseStreamID(req.StreamId())

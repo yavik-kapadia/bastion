@@ -47,6 +47,22 @@ export interface User {
   created_at?: string;
 }
 
+export interface SubscriberStats {
+  id: number;
+  remote_addr: string;
+  connected_for: number; // Go time.Duration encodes as nanoseconds
+  rtt_ms: number;
+  send_loss_rate_pct: number; // 0-100; % of bytes sent that were retransmits
+  send_mbps: number;          // current outbound rate to this peer (incl. retrans)
+  useful_mbps: number;        // unique-payload outbound to this peer (excl. retrans)
+  link_capacity_mbps: number; // SRT's estimated link capacity to this peer
+  pkt_sent: number;
+  pkt_retrans: number;
+  pkt_send_drop: number;      // packets sender abandoned (latency window exceeded)
+  send_buf_ms: number;        // TSBPD buffer occupancy in ms
+  pkt_flight_size: number;    // packets in flight (unacked)
+}
+
 export interface AuthUser {
   user_id: string;
   username: string;
@@ -100,6 +116,8 @@ export const api = {
   listStreams: () => request<Stream[]>('GET', '/streams'),
   getStream: (name: string, reveal = false) =>
     request<Stream>('GET', `/streams/${name}${reveal ? '?reveal=true' : ''}`),
+  streamSubscribers: (name: string) =>
+    request<SubscriberStats[]>('GET', `/streams/${encodeURIComponent(name)}/subscribers`),
   createStream: (p: StreamPayload) => request<Stream>('POST', '/streams', p),
   updateStream: (name: string, p: Partial<StreamPayload>) =>
     request<Stream>('PUT', `/streams/${name}`, p),

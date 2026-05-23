@@ -43,6 +43,10 @@ type StreamMetrics struct {
 	SendLossRate    float64 `json:"send_loss_rate"`
 	RecvBitrateMbps float64 `json:"recv_bitrate_mbps"`
 	SendBitrateMbps float64 `json:"send_bitrate_mbps"`
+	// UsefulSendMbps is the unique-payload outbound rate (excludes
+	// retransmissions). When much lower than SendBitrateMbps, one or more
+	// subscribers are requesting heavy retransmits.
+	UsefulSendMbps  float64 `json:"useful_send_mbps"`
 	Retransmits     uint64  `json:"retransmits"`
 	Undecrypted     uint64  `json:"undecrypted"`
 }
@@ -122,6 +126,7 @@ func (c *Collector) collect() MetricsSnapshot {
 			SendLossRate:    st.SRT.SendLossRate,
 			RecvBitrateMbps: st.SRT.RecvBitrateMbps,
 			SendBitrateMbps: st.SRT.SendBitrateMbps,
+			UsefulSendMbps:  st.SRT.UsefulSendMbps,
 			Retransmits:     st.SRT.PktRetrans,
 			Undecrypted:     st.SRT.PktUndecrypt,
 		}
@@ -160,11 +165,13 @@ func (c *Collector) updatePrometheus(snap MetricsSnapshot) {
 			c.prom.PacketLossRate.WithLabelValues(name).Set(sm.SendLossRate)
 			c.prom.BitrateInMbps.WithLabelValues(name).Set(sm.RecvBitrateMbps)
 			c.prom.BitrateOutMbps.WithLabelValues(name).Set(sm.SendBitrateMbps)
+			c.prom.BitrateOutUsefulMbps.WithLabelValues(name).Set(sm.UsefulSendMbps)
 		} else {
 			c.prom.RTTMs.WithLabelValues(name).Set(0)
 			c.prom.PacketLossRate.WithLabelValues(name).Set(0)
 			c.prom.BitrateInMbps.WithLabelValues(name).Set(0)
 			c.prom.BitrateOutMbps.WithLabelValues(name).Set(0)
+			c.prom.BitrateOutUsefulMbps.WithLabelValues(name).Set(0)
 		}
 
 		prevRetrans := c.prevRetrans[name]
