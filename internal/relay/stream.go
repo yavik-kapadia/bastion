@@ -67,12 +67,13 @@ type Stream struct {
 // excluded from subscriberCount so the public stat tracks real viewers,
 // and are logged at debug level only.
 type subscriber struct {
-	id        uint32
-	conn      srt.Conn
-	ch        chan []byte
-	done      chan struct{}
-	closeOnce sync.Once
-	internal  bool
+	id         uint32
+	conn       srt.Conn
+	ch         chan []byte
+	done       chan struct{}
+	closeOnce  sync.Once
+	internal   bool
+	connectedAt time.Time // for "connected for" duration on the dashboard
 }
 
 func (sub *subscriber) closeCh() {
@@ -140,11 +141,12 @@ func (s *Stream) AddInternalSubscriber(ctx context.Context, conn srt.Conn) uint3
 func (s *Stream) addSubscriber(ctx context.Context, conn srt.Conn, internal bool) uint32 {
 	id := atomic.AddUint32(&s.nextSubID, 1)
 	sub := &subscriber{
-		id:       id,
-		conn:     conn,
-		ch:       make(chan []byte, s.bufSize),
-		done:     make(chan struct{}),
-		internal: internal,
+		id:          id,
+		conn:        conn,
+		ch:          make(chan []byte, s.bufSize),
+		done:        make(chan struct{}),
+		internal:    internal,
+		connectedAt: time.Now(),
 	}
 
 	s.mu.Lock()
@@ -198,11 +200,19 @@ func (s *Stream) Close() {
 }
 
 // SRTStats holds SRT protocol-level statistics collected from live connections.
+//
+// SendBitrateMbps counts only EXTERNAL subscribers (loopback thumbnail /
+// ffprobe workers are excluded so the metric reflects what's actually being
+// served to viewers).
+// UsefulSendMbps is the unique-payload throughput excluding retransmissions
+// — when this is significantly less than SendBitrateMbps, you have a chatty
+// viewer requesting lots of retransmits.
 type SRTStats struct {
 	MsRTT           float64 // Smoothed RTT to publisher in milliseconds
 	SendLossRate    float64 // Publisher send-path loss rate (0–100)
 	RecvBitrateMbps float64 // Inbound bitrate from publisher in Mbps
-	SendBitrateMbps float64 // Outbound bitrate to all subscribers combined in Mbps
+	SendBitrateMbps float64 // Outbound bitrate to all external subscribers combined in Mbps (incl. retransmissions)
+	UsefulSendMbps  float64 // Outbound bitrate counting only unique payload (Interval.MbpsSendRate equivalent, ex-retrans)
 	PktRetrans      uint64  // Total retransmitted packets on the publish path
 	PktUndecrypt    uint64  // Total failed decryptions across all connections
 }
@@ -266,11 +276,88 @@ func (s *Stream) collectSRTStats() SRTStats {
 		out.PktRetrans = st.Accumulated.PktRetrans
 		out.PktUndecrypt = st.Accumulated.PktRecvUndecrypt
 	}
+	// SendBitrateMbps and UsefulSendMbps deliberately exclude internal=true
+	// subscribers (loopback thumbnail / ffprobe workers) so the public metric
+	// reflects only what's actually being served to external viewers.
 	for _, sub := range subs {
 		var st srt.Statistics
 		sub.conn.Stats(&st)
-		out.SendBitrateMbps += st.Instantaneous.MbpsSentRate
+		// PktUndecrypt totals across all subscribers including internal (it's
+		// an error counter; we want to see all of them).
 		out.PktUndecrypt += st.Accumulated.PktRecvUndecrypt
+		if sub.internal {
+			continue
+		}
+		out.SendBitrateMbps += st.Instantaneous.MbpsSentRate
+		// Interval.MbpsSendRate is byte-derived (true bytes/elapsed) but
+		// it also counts retransmitted byte deliveries. Subtract the
+		// retrans byte rate to get unique payload throughput.
+		if st.Interval.MsInterval > 0 {
+			intervalSec := float64(st.Interval.MsInterval) / 1000.0
+			uniqueMbps := float64(st.Interval.ByteSentUnique) * 8.0 / 1_000_000.0 / intervalSec
+			out.UsefulSendMbps += uniqueMbps
+		}
+	}
+	return out
+}
+
+// SubscriberStats is a per-subscriber snapshot returned by Subscribers().
+// External-only — internal workers are filtered out.
+type SubscriberStats struct {
+	ID              uint32        `json:"id"`
+	RemoteAddr      string        `json:"remote_addr"`
+	ConnectedFor    time.Duration `json:"connected_for"`
+	MsRTT           float64       `json:"rtt_ms"`
+	SendLossRatePct float64       `json:"send_loss_rate_pct"` // % of bytes sent that were retransmits
+	SendMbps        float64       `json:"send_mbps"`          // current send rate (incl. retransmits)
+	UsefulMbps      float64       `json:"useful_mbps"`        // unique-payload bytes/sec
+	LinkCapacityMbps float64      `json:"link_capacity_mbps"` // SRT's estimated link capacity to this peer
+	PktSent         uint64        `json:"pkt_sent"`           // accumulated (includes retransmits)
+	PktRetrans      uint64        `json:"pkt_retrans"`        // accumulated retransmits to this peer
+	PktSendDrop     uint64        `json:"pkt_send_drop"`      // packets sender gave up on (latency window exceeded)
+	SendBufMs       uint64        `json:"send_buf_ms"`        // TSBPD buffer occupancy in ms — how far behind we are
+	PktFlightSize   uint64        `json:"pkt_flight_size"`    // packets in flight (unacked)
+}
+
+// Subscribers returns a snapshot of stats for each EXTERNAL subscriber. Used
+// by the dashboard "Connected Viewers" table to spot chatty peers and
+// per-leg health.
+func (s *Stream) Subscribers() []SubscriberStats {
+	s.mu.RLock()
+	subs := make([]*subscriber, 0, len(s.subscribers))
+	for _, sub := range s.subscribers {
+		if sub.internal {
+			continue
+		}
+		subs = append(subs, sub)
+	}
+	s.mu.RUnlock()
+
+	now := time.Now()
+	out := make([]SubscriberStats, 0, len(subs))
+	for _, sub := range subs {
+		var st srt.Statistics
+		sub.conn.Stats(&st)
+
+		entry := SubscriberStats{
+			ID:               sub.id,
+			RemoteAddr:       sub.conn.RemoteAddr().String(),
+			ConnectedFor:     now.Sub(sub.connectedAt).Truncate(time.Second),
+			MsRTT:            st.Instantaneous.MsRTT,
+			SendLossRatePct:  st.Instantaneous.PktSendLossRate,
+			SendMbps:         st.Instantaneous.MbpsSentRate,
+			LinkCapacityMbps: st.Instantaneous.MbpsLinkCapacity,
+			PktSent:          st.Accumulated.PktSent,
+			PktRetrans:       st.Accumulated.PktRetrans,
+			PktSendDrop:      st.Accumulated.PktSendDrop,
+			SendBufMs:        st.Instantaneous.MsSendBuf,
+			PktFlightSize:    st.Instantaneous.PktFlightSize,
+		}
+		if st.Interval.MsInterval > 0 {
+			entry.UsefulMbps = float64(st.Interval.ByteSentUnique) * 8.0 / 1_000_000.0 /
+				(float64(st.Interval.MsInterval) / 1000.0)
+		}
+		out = append(out, entry)
 	}
 	return out
 }

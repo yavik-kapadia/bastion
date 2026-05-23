@@ -26,6 +26,9 @@ func (f *fakeRelay) ActiveStreams() map[string]relay.StreamStats { return nil }
 func (f *fakeRelay) StreamStats(name string) (relay.StreamStats, bool) {
 	return relay.StreamStats{}, false
 }
+func (f *fakeRelay) StreamSubscribers(name string) ([]relay.SubscriberStats, bool) {
+	return nil, false
+}
 
 func newTestServer(t *testing.T) (*Server, *httptest.Server) {
 	t.Helper()

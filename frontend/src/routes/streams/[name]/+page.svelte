@@ -10,7 +10,7 @@
   import HealthBadge from '$lib/components/HealthBadge.svelte';
   import StreamForm from '$lib/components/StreamForm.svelte';
   import LogTail from '$lib/components/LogTail.svelte';
-  import type { Stream, StreamPayload } from '$lib/api';
+  import type { Stream, StreamPayload, SubscriberStats } from '$lib/api';
 
   let { data } = $props();
   let stream = $derived(data.stream);
@@ -53,6 +53,8 @@
 
   let thumbnailSrc = $state('');
   let thumbnailError = $state(false);
+
+  let subscribers = $state<SubscriberStats[]>([]);
 
   let copiedPublish = $state(false);
   let copiedSubscribe = $state(false);
@@ -132,9 +134,40 @@
     if (hasPublisher) refreshThumbnail();
   }, refreshMs);
 
+  // Per-subscriber breakdown — polled every 2s when the publisher is up.
+  // Faster than the thumbnail because the "chatty viewer" signal moves with
+  // network conditions and is more interesting to watch in real time.
+  async function refreshSubscribers() {
+    if (!hasPublisher) {
+      subscribers = [];
+      return;
+    }
+    try {
+      subscribers = await api.streamSubscribers(name);
+    } catch {
+      // Silent; transient.
+    }
+  }
+  const subscribersInterval = setInterval(refreshSubscribers, 2000);
+  // Fire immediately on mount so the table populates without waiting.
+  refreshSubscribers();
+
   onDestroy(() => {
     clearInterval(thumbnailInterval);
+    clearInterval(subscribersInterval);
   });
+
+  // Go time.Duration JSON-encodes as nanoseconds. Render as
+  // "1h05m", "5m23s", "47s" depending on magnitude.
+  function formatDuration(ns: number): string {
+    const totalSec = Math.floor(ns / 1_000_000_000);
+    if (totalSec < 60) return `${totalSec}s`;
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    if (m < 60) return `${m}m${String(s).padStart(2, '0')}s`;
+    const h = Math.floor(m / 60);
+    return `${h}h${String(m % 60).padStart(2, '0')}m`;
+  }
 
   function saveHostUrl() {
     setHostUrl(hostInput);
@@ -362,6 +395,50 @@
         </div>
       {/if}
     {/if}
+  {/if}
+
+  <!-- Per-subscriber breakdown. Pinpoints which viewer is chatty when the
+       headline Outbound metric is much higher than Subscribers × Inbound. -->
+  {#if subscribers && subscribers.length > 0}
+    <div class="card overflow-x-auto">
+      <div class="flex items-baseline justify-between mb-3">
+        <h2 class="font-semibold">Connected Viewers</h2>
+        <span class="text-xs text-gray-500">refreshes every 2s</span>
+      </div>
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-500 uppercase">
+          <tr class="border-b border-gray-800">
+            <th class="text-left py-2 font-medium">Remote</th>
+            <th class="text-right py-2 font-medium">Up</th>
+            <th class="text-right py-2 font-medium">RTT</th>
+            <th class="text-right py-2 font-medium">Loss</th>
+            <th class="text-right py-2 font-medium">Send</th>
+            <th class="text-right py-2 font-medium">Useful</th>
+            <th class="text-right py-2 font-medium">Buf</th>
+            <th class="text-right py-2 font-medium">Drops</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each subscribers as sub (sub.id)}
+            {@const lossy = sub.send_loss_rate_pct > 1}
+            <tr class="border-b border-gray-900 hover:bg-gray-900/30 {lossy ? 'bg-yellow-900/10' : ''}">
+              <td class="py-2 font-mono text-xs text-gray-300">{sub.remote_addr}</td>
+              <td class="py-2 text-right text-gray-400">{formatDuration(sub.connected_for)}</td>
+              <td class="py-2 text-right">{sub.rtt_ms.toFixed(1)} ms</td>
+              <td class="py-2 text-right {lossy ? 'text-yellow-400 font-semibold' : ''}">{sub.send_loss_rate_pct.toFixed(2)}%</td>
+              <td class="py-2 text-right">{sub.send_mbps.toFixed(2)}</td>
+              <td class="py-2 text-right text-gray-400">{sub.useful_mbps.toFixed(2)}</td>
+              <td class="py-2 text-right text-gray-400">{sub.send_buf_ms} ms</td>
+              <td class="py-2 text-right {sub.pkt_send_drop > 0 ? 'text-red-400' : 'text-gray-400'}">{sub.pkt_send_drop}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      <p class="text-xs text-gray-500 mt-3">
+        <span class="text-gray-400">Send</span> includes retransmissions; <span class="text-gray-400">Useful</span> is unique payload only.
+        Big gap → that viewer is asking for lots of retransmits.
+      </p>
+    </div>
   {/if}
 
   <!-- Stream config -->

@@ -17,6 +17,7 @@ type Prom struct {
 	RTTMs              *prometheus.GaugeVec
 	BitrateInMbps      *prometheus.GaugeVec
 	BitrateOutMbps     *prometheus.GaugeVec
+	BitrateOutUsefulMbps *prometheus.GaugeVec
 	Retransmits        *prometheus.CounterVec
 	Undecrypted        *prometheus.CounterVec
 }
@@ -62,7 +63,11 @@ func NewProm() *Prom {
 		}, []string{"stream"}),
 		BitrateOutMbps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "bastion_bitrate_out_mbps",
-			Help: "Outbound bitrate to subscribers in Mbps.",
+			Help: "Outbound bitrate to external subscribers in Mbps (incl. retransmissions).",
+		}, []string{"stream"}),
+		BitrateOutUsefulMbps: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "bastion_bitrate_out_useful_mbps",
+			Help: "Outbound bitrate counting only unique payload bytes (excl. retransmissions) — when much lower than bastion_bitrate_out_mbps, a viewer is requesting heavy retransmits.",
 		}, []string{"stream"}),
 		Retransmits: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "bastion_retransmits_total",
@@ -84,6 +89,7 @@ func NewProm() *Prom {
 		p.RTTMs,
 		p.BitrateInMbps,
 		p.BitrateOutMbps,
+		p.BitrateOutUsefulMbps,
 		p.Retransmits,
 		p.Undecrypted,
 	)

@@ -28,6 +28,7 @@ import (
 type RelayReader interface {
 	ActiveStreams() map[string]relay.StreamStats
 	StreamStats(name string) (relay.StreamStats, bool)
+	StreamSubscribers(name string) ([]relay.SubscriberStats, bool)
 }
 
 // Options bundles the runtime knobs for an api.Server. Zero values map to the
@@ -228,6 +229,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 		r.Get("/api/v1/streams", s.listStreams)
 		r.Get("/api/v1/streams/{name}", s.getStream)
 		r.Get("/api/v1/streams/{name}/thumbnail", s.streamThumbnail)
+		r.Get("/api/v1/streams/{name}/subscribers", s.streamSubscribers)
 
 		r.Get("/api/v1/metrics/global", s.globalMetrics)
 		r.Get("/api/v1/ws", ws.Handler(s.hub))
