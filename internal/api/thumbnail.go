@@ -101,9 +101,14 @@ func (s *Server) grabFrame(ctx context.Context, name string) ([]byte, error) {
 	}
 	switch s.thumbnailFormat {
 	case "webp":
+		// -method 0 is libwebp's fast lossy preset: roughly 3–5x faster
+		// encode vs the default (method 4) with ~5–10% larger file at
+		// the same -quality. For frequently-refreshing thumbnails the
+		// latency win is worth the bytes.
 		args = append(args,
 			"-vcodec", "libwebp",
 			"-quality", strconv.Itoa(s.thumbnailWebPQuality), // 0-100, higher = better
+			"-method", "0",
 			"-",
 		)
 	default: // jpeg
