@@ -165,6 +165,27 @@ curl -X POST -H "Authorization: Bearer $KEY" \
 # Returns the raw key — store it securely, it is shown only once.
 ```
 
+API keys created this way never expire. Dashboard login sessions are also
+keys, but they expire after `api.session_ttl` and are revoked on logout.
+
+### List and Revoke Your Keys
+
+```bash
+# Lists your own keys and active login sessions (id, name, prefix, expiry).
+curl -H "Authorization: Bearer $KEY" $BASE/api/v1/auth/api-keys
+
+# Revoke one of them by id.
+curl -X DELETE -H "Authorization: Bearer $KEY" $BASE/api/v1/auth/api-keys/<id>
+```
+
+### Running Behind a Reverse Proxy
+
+Bastion ignores `X-Forwarded-For` / `X-Real-IP` by default, so clients cannot
+spoof their address to get around the login rate limit. If you put nginx,
+Caddy or Traefik in front, list the proxy's address in `api.trusted_proxies`
+(e.g. `["127.0.0.1"]` or `["172.16.0.0/12"]` for a Docker network). Otherwise
+every login appears to come from the proxy and shares one rate-limit bucket.
+
 ---
 
 ## 5. Encryption Setup

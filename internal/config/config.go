@@ -47,6 +47,7 @@ type APIConfig struct {
 	LoginRateLimit  int           `toml:"login_rate_limit"`  // attempts allowed within the window
 	LoginRateWindow time.Duration `toml:"login_rate_window"` // window for rate limit
 	ForceHTTPS      bool          `toml:"force_https"`       // strict-transport-security + secure cookie even behind a TLS proxy
+	TrustedProxies  []string      `toml:"trusted_proxies"`   // IPs/CIDRs whose X-Forwarded-For / X-Real-IP headers are honoured; empty = trust none
 }
 
 // DatabaseConfig configures the SQLite database.

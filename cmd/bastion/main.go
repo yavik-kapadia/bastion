@@ -149,6 +149,7 @@ func run(ctx context.Context, cfg *config.Config) error {
 		LoginRateLimit:  cfg.API.LoginRateLimit,
 		LoginRateWindow: cfg.API.LoginRateWindow,
 		ForceHTTPS:      cfg.API.ForceHTTPS,
+		TrustedProxies:  cfg.API.TrustedProxies,
 
 		ThumbnailEnabled:     cfg.Thumbnail.Enabled,
 		ThumbnailCacheTTL:    cfg.Thumbnail.CacheTTL,

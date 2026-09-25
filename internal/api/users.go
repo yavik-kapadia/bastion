@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -44,7 +46,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "failed to create admin")
 		return
 	}
-	rawKey, err := s.db.Users.CreateAPIKey(newID(), id, "setup-session")
+	rawKey, err := s.db.Users.CreateSessionKey(newID(), id, "setup-session", time.Now().Add(s.sessionTTL))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to create session key")
 		return
@@ -69,8 +71,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
-	// Issue a new API key scoped to this login session.
-	rawKey, err := s.db.Users.CreateAPIKey(newID(), u.ID, "session-"+time.Now().Format("20060102150405"))
+	// Opportunistically drop expired session keys so they don't pile up.
+	if _, err := s.db.Users.PurgeExpiredAPIKeys(); err != nil {
+		slog.Warn("api: purge expired session keys failed", "err", err)
+	}
+	// Issue a new key scoped to this login session; it expires with the cookie.
+	rawKey, err := s.db.Users.CreateSessionKey(newID(), u.ID,
+		"session-"+time.Now().Format("20060102150405"), time.Now().Add(s.sessionTTL))
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "could not create session key")
 		return
@@ -99,8 +106,19 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// logout POST /api/v1/auth/logout — clears the session cookie.
+// logout POST /api/v1/auth/logout — revokes the session key and clears the cookie.
+// Only cookie sessions are revoked; a request authenticated with a bearer API
+// key just gets the (absent) cookie cleared, so scripts can't accidentally
+// destroy long-lived keys.
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if authViaCookie(r.Context()) {
+		if key, _ := s.extractToken(r); key != "" {
+			if err := s.db.Users.RevokeAPIKey(key); err != nil {
+				respondError(w, http.StatusInternalServerError, "failed to revoke session")
+				return
+			}
+		}
+	}
 	s.clearSessionCookie(w, r)
 	respond(w, http.StatusOK, map[string]string{"status": "logged out"})
 }
@@ -124,6 +142,36 @@ func (s *Server) createAPIKey(w http.ResponseWriter, r *http.Request) {
 		"key": rawKey,
 		"note": "Store this key securely — it will not be shown again.",
 	})
+}
+
+// listAPIKeys GET /api/v1/auth/api-keys — the caller's own keys and sessions.
+func (s *Server) listAPIKeys(w http.ResponseWriter, r *http.Request) {
+	u := userFromCtx(r.Context())
+	keys, err := s.db.Users.ListAPIKeys(u.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list keys")
+		return
+	}
+	if keys == nil {
+		keys = []*model.APIKey{}
+	}
+	respond(w, http.StatusOK, keys)
+}
+
+// deleteAPIKey DELETE /api/v1/auth/api-keys/{id} — revoke one of the caller's keys.
+func (s *Server) deleteAPIKey(w http.ResponseWriter, r *http.Request) {
+	u := userFromCtx(r.Context())
+	id := chi.URLParam(r, "id")
+	err := s.db.Users.DeleteUserAPIKey(id, u.ID)
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "api key not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to revoke key")
+		return
+	}
+	respond(w, http.StatusOK, map[string]string{"deleted": id})
 }
 
 // listUsers GET /api/v1/users (admin only)

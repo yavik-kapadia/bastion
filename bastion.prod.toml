@@ -20,6 +20,14 @@ jwt_secret = "REPLACE_WITH_RANDOM_64_HEX_CHARS"
 # Required for encrypting SRT passphrases at rest.
 encryption_key = "REPLACE_WITH_64_HEX_CHARS"
 
+# Reverse proxies (IPs or CIDRs) allowed to set X-Forwarded-For / X-Real-IP.
+# Only requests arriving directly from these addresses have those headers
+# honoured; everyone else is identified by their TCP peer address. Leave
+# empty when Bastion is exposed directly. Set this when running behind
+# nginx/Caddy/Traefik, otherwise all logins share the proxy's rate-limit bucket.
+# trusted_proxies = ["127.0.0.1", "10.0.0.0/8"]
+trusted_proxies = []
+
 [database]
 # Mounted via Docker volume — do not change this path when using docker-compose.
 path = "/data/bastion.db"

@@ -70,4 +70,11 @@ var migrations = []string{
 	// Quick Start URL generator so clients see the right `&latency=...` for
 	// their stream.
 	`ALTER TABLE streams ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0`,
+
+	// v4: login sessions used to be issued as never-expiring API keys. Drop
+	// those legacy session keys so any leaked cookie stops working; users
+	// just log in again. Keys created via POST /auth/api-keys are untouched.
+	`DELETE FROM api_keys
+	 WHERE expires_at IS NULL
+	   AND (name = 'setup-session' OR name LIKE 'session-%')`,
 }

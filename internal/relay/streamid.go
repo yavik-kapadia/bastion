@@ -74,9 +74,8 @@ func parseModern(kv string) (*StreamID, error) {
 			sid.Passphrase = strings.TrimSpace(v)
 		case "w":
 			// w=internal marks the connection as one of our own workers
-			// (thumbnail capture, ffprobe). External clients should never
-			// set this; if they do, the worst they get is being hidden
-			// from the public viewer count for their own session.
+			// (thumbnail capture, ffprobe). The relay only honours it from
+			// loopback peers; see Relay.handleRequest.
 			if strings.TrimSpace(v) == "internal" {
 				sid.Internal = true
 			}

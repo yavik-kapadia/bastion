@@ -106,22 +106,34 @@ func (r *UserRepo) Delete(id string) error {
 }
 
 // CreateAPIKey generates a new random API key for userID, stores its SHA-256 hash,
-// and returns the raw key (shown once).
+// and returns the raw key (shown once). The key never expires.
 func (r *UserRepo) CreateAPIKey(keyID, userID, name string) (string, error) {
+	return r.insertAPIKey(keyID, userID, name, nil)
+}
+
+// CreateSessionKey is CreateAPIKey for login sessions: the key stops
+// validating after expiresAt.
+func (r *UserRepo) CreateSessionKey(keyID, userID, name string, expiresAt time.Time) (string, error) {
+	exp := expiresAt.UTC()
+	return r.insertAPIKey(keyID, userID, name, &exp)
+}
+
+func (r *UserRepo) insertAPIKey(keyID, userID, name string, expiresAt *time.Time) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", fmt.Errorf("generate key: %w", err)
 	}
 	rawHex := hex.EncodeToString(raw)
-
-	sum := sha256.Sum256([]byte(rawHex))
-	keyHash := hex.EncodeToString(sum[:])
 	prefix := rawHex[:8]
 
+	var exp sql.NullTime
+	if expiresAt != nil {
+		exp = sql.NullTime{Time: *expiresAt, Valid: true}
+	}
 	_, err := r.db.Exec(`
-		INSERT INTO api_keys (id, user_id, key_hash, key_prefix, name, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		keyID, userID, keyHash, prefix, name, time.Now().UTC(),
+		INSERT INTO api_keys (id, user_id, key_hash, key_prefix, name, expires_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		keyID, userID, hashKey(rawHex), prefix, name, exp, time.Now().UTC(),
 	)
 	if err != nil {
 		return "", fmt.Errorf("insert api key: %w", err)
@@ -129,11 +141,15 @@ func (r *UserRepo) CreateAPIKey(keyID, userID, name string) (string, error) {
 	return rawHex, nil
 }
 
+func hashKey(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
 // ValidateAPIKey looks up a key by its SHA-256 hash, updates last_used_at, and
 // returns the associated User.
 func (r *UserRepo) ValidateAPIKey(rawKey string) (*model.User, error) {
-	sum := sha256.Sum256([]byte(rawKey))
-	keyHash := hex.EncodeToString(sum[:])
+	keyHash := hashKey(rawKey)
 
 	var userID string
 	var expires sql.NullTime
@@ -157,7 +173,7 @@ func (r *UserRepo) ValidateAPIKey(rawKey string) (*model.User, error) {
 // ListAPIKeys returns all API keys for a user (without the raw key).
 func (r *UserRepo) ListAPIKeys(userID string) ([]*model.APIKey, error) {
 	rows, err := r.db.Query(`
-		SELECT id, user_id, key_prefix, name, last_used_at, created_at
+		SELECT id, user_id, key_prefix, name, last_used_at, expires_at, created_at
 		FROM api_keys WHERE user_id = ? ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -166,13 +182,17 @@ func (r *UserRepo) ListAPIKeys(userID string) ([]*model.APIKey, error) {
 	var out []*model.APIKey
 	for rows.Next() {
 		k := &model.APIKey{}
-		var lastUsed sql.NullTime
-		if err := rows.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &lastUsed, &k.CreatedAt); err != nil {
+		var lastUsed, expires sql.NullTime
+		if err := rows.Scan(&k.ID, &k.UserID, &k.Prefix, &k.Name, &lastUsed, &expires, &k.CreatedAt); err != nil {
 			return nil, err
 		}
 		if lastUsed.Valid {
 			t := lastUsed.Time
 			k.LastUsedAt = &t
+		}
+		if expires.Valid {
+			t := expires.Time
+			k.ExpiresAt = &t
 		}
 		out = append(out, k)
 	}
@@ -183,6 +203,59 @@ func (r *UserRepo) ListAPIKeys(userID string) ([]*model.APIKey, error) {
 func (r *UserRepo) DeleteAPIKey(id string) error {
 	_, err := r.db.Exec(`DELETE FROM api_keys WHERE id = ?`, id)
 	return err
+}
+
+// DeleteUserAPIKey removes key id only if it belongs to userID.
+// Returns sql.ErrNoRows if no such key exists for that user.
+func (r *UserRepo) DeleteUserAPIKey(id, userID string) error {
+	res, err := r.db.Exec(`DELETE FROM api_keys WHERE id = ? AND user_id = ?`, id, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// RevokeAPIKey deletes the key matching rawKey (used on logout).
+func (r *UserRepo) RevokeAPIKey(rawKey string) error {
+	_, err := r.db.Exec(`DELETE FROM api_keys WHERE key_hash = ?`, hashKey(rawKey))
+	return err
+}
+
+// PurgeExpiredAPIKeys deletes keys whose expires_at has passed. The expiry
+// comparison happens in Go so it does not depend on how the driver serialises
+// DATETIME values.
+func (r *UserRepo) PurgeExpiredAPIKeys() (int, error) {
+	rows, err := r.db.Query(`SELECT id, expires_at FROM api_keys WHERE expires_at IS NOT NULL`)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now()
+	var expired []string
+	for rows.Next() {
+		var id string
+		var exp sql.NullTime
+		if err := rows.Scan(&id, &exp); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if exp.Valid && exp.Time.Before(now) {
+			expired = append(expired, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	for _, id := range expired {
+		if err := r.DeleteAPIKey(id); err != nil {
+			return 0, err
+		}
+	}
+	return len(expired), nil
 }
 
 func scanUser(s scanner) (*model.User, error) {

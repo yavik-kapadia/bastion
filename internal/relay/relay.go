@@ -155,7 +155,16 @@ func (r *Relay) handleRequest(ctx context.Context, req srt.ConnRequest) {
 	// (thumbnail capture, ffprobe media-info). They're invisible to the
 	// public subscriber count and logged at debug level only — keeps the
 	// operational log clean of the every-10s thumbnail-fetch chatter.
-	internal := sid.Mode == ModeRequest && sid.Internal
+	//
+	// The workers always dial 127.0.0.1, so the tag is only honoured from a
+	// loopback peer. Otherwise any remote client could add w=internal to
+	// dodge max_subscribers and hide from the dashboard.
+	internal := sid.Mode == ModeRequest && sid.Internal && isLoopback(req.RemoteAddr())
+	if sid.Internal && !internal {
+		sid.Internal = false
+		slog.Warn("relay: ignoring w=internal from non-loopback peer",
+			"stream", sid.Name, "remote", req.RemoteAddr())
+	}
 
 	if internal {
 		slog.Debug("relay: internal worker connection",
@@ -207,6 +216,19 @@ func (r *Relay) handleRequest(ctx context.Context, req srt.ConnRequest) {
 	case ModeRequest:
 		r.handleSubscriber(ctx, conn, sid.Name, internal)
 	}
+}
+
+// isLoopback reports whether addr is a loopback IP (127.0.0.0/8 or ::1).
+func isLoopback(addr net.Addr) bool {
+	if addr == nil {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		host = addr.String()
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (r *Relay) handlePublisher(ctx context.Context, conn srt.Conn, name string) {

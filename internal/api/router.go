@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -43,6 +44,10 @@ type Options struct {
 	LoginRateLimit  int
 	LoginRateWindow time.Duration
 	ForceHTTPS      bool
+	// TrustedProxies lists IPs/CIDRs of reverse proxies whose forwarding
+	// headers (X-Forwarded-For, X-Real-IP) are believed. Empty = ignore
+	// those headers and use the TCP peer address.
+	TrustedProxies []string
 
 	// Thumbnail pipeline
 	ThumbnailEnabled     bool
@@ -83,9 +88,10 @@ type Server struct {
 	httpServer     *http.Server
 
 	// Auth/session knobs
-	sessionTTL   time.Duration
-	loginLimiter *loginRateLimiter
-	forceHTTPS   bool
+	sessionTTL     time.Duration
+	loginLimiter   *loginRateLimiter
+	forceHTTPS     bool
+	trustedProxies []*net.IPNet
 
 	// Thumbnail knobs (used by streamThumbnail + grabFrame)
 	thumbnailEnabled     bool
@@ -178,6 +184,11 @@ func NewServer(database *db.DB, r RelayReader, p *metrics.Prom, hub *ws.Hub, fro
 	if frontendFS != nil {
 		s.frontend = staticHandler(frontendFS)
 	}
+	trusted, err := parseTrustedProxies(opts.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
+	s.trustedProxies = trusted
 	if opts.EncKeyHex != "" {
 		key, err := hex.DecodeString(opts.EncKeyHex)
 		if err != nil || (len(key) != 16 && len(key) != 32) {
@@ -216,7 +227,7 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(realIP(s.trustedProxies))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Logger)
 	r.Use(s.securityHeaders)
@@ -241,7 +252,9 @@ func (s *Server) Start(ctx context.Context, addr string, corsOrigin string) erro
 
 		r.Get("/api/v1/auth/me", s.me)
 		r.Post("/api/v1/auth/logout", s.logout)
+		r.Get("/api/v1/auth/api-keys", s.listAPIKeys)
 		r.Post("/api/v1/auth/api-keys", s.createAPIKey)
+		r.Delete("/api/v1/auth/api-keys/{id}", s.deleteAPIKey)
 
 		r.Get("/api/v1/streams", s.listStreams)
 		r.Get("/api/v1/streams/{name}", s.getStream)

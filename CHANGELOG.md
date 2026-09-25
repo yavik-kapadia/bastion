@@ -2,7 +2,15 @@
 
 All notable changes to Bastion will be documented in this file.
 
-## [0.2.15] - 2026-05-22
+## [Unreleased]
+
+### Security
+- **Login rate limit can no longer be bypassed with spoofed headers** (#24). chi's `middleware.RealIP` trusted `X-Forwarded-For` / `X-Real-IP` from any client. It is replaced by a middleware that only honours those headers from addresses in the new `api.trusted_proxies` setting (default: none).
+- **Session tokens expire and are revoked on logout** (#25). Login and first-run setup keys now carry `expires_at = now + session_ttl`; logout deletes the session key; expired keys are purged on login. A migration deletes legacy never-expiring session keys (names `session-*` / `setup-session`), so existing dashboard users must log in once more. New `GET /api/v1/auth/api-keys` and `DELETE /api/v1/auth/api-keys/{id}` let users list and revoke their own keys.
+- **`w=internal` is only honoured from loopback peers** (#26). Remote SRT clients could previously set it to bypass `max_subscribers` and hide from the dashboard.
+- **Partial stream updates no longer reset `max_subscribers` / `latency_ms`** (#27). Omitted fields are now left unchanged. `allowed_publishers` entries must be valid IPs or CIDRs.
+
+ - 2026-05-22
 
 ### Added
 - **Event logs with live tail.** A new `event_logs` SQLite table captures structured log records via a slog tee handler (text output to stdout is unchanged; the DB sink is advisory and drops oldest under sustained pressure). REST endpoints `GET /api/v1/logs` and `GET /api/v1/streams/{name}/logs` (manager+) return cursor-paged feeds; the existing dashboard WebSocket now also pushes `{type:"logs"}` batches for real-time updates. A housekeeping goroutine purges rows older than 24h every 5 minutes.

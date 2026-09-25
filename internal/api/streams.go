@@ -2,6 +2,8 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
+	"net"
 	"net/http"
 	"regexp"
 	"time"
@@ -20,10 +22,26 @@ type streamRequest struct {
 	Description       string   `json:"description"`
 	Passphrase        string   `json:"passphrase"`
 	KeyLength         int      `json:"key_length"`
-	MaxSubscribers    int      `json:"max_subscribers"`
+	MaxSubscribers    *int     `json:"max_subscribers"` // nil = unset (create: server default; update: unchanged)
 	AllowedPublishers []string `json:"allowed_publishers"`
 	Enabled           *bool    `json:"enabled"`
-	LatencyMS         int      `json:"latency_ms"` // 0 = inherit global default
+	LatencyMS         *int     `json:"latency_ms"` // nil = unset; 0 = inherit global default
+}
+
+// validatePublisherList rejects allowed_publishers entries that are neither an
+// IP nor a CIDR. Such entries never match in the SRT guard, so accepting them
+// would silently lock out every publisher.
+func validatePublisherList(list []string) error {
+	for _, e := range list {
+		if net.ParseIP(e) != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(e); err == nil {
+			continue
+		}
+		return fmt.Errorf("allowed_publishers: %q is not a valid IP address or CIDR", e)
+	}
+	return nil
 }
 
 // listStreams GET /api/v1/streams
@@ -90,12 +108,27 @@ func (s *Server) createStream(w http.ResponseWriter, r *http.Request) {
 	}
 	// If the caller didn't specify a limit, apply the server's default.
 	// 0 still means unlimited; the default only fills in unset.
-	maxSubs := req.MaxSubscribers
+	maxSubs := 0
+	if req.MaxSubscribers != nil {
+		maxSubs = *req.MaxSubscribers
+	}
+	if maxSubs < 0 {
+		respondError(w, http.StatusBadRequest, "max_subscribers must be >= 0 (0 = unlimited)")
+		return
+	}
 	if maxSubs == 0 && s.defaultMaxSubscribers > 0 {
 		maxSubs = s.defaultMaxSubscribers
 	}
-	if req.LatencyMS < 0 || req.LatencyMS > 30000 {
+	latency := 0
+	if req.LatencyMS != nil {
+		latency = *req.LatencyMS
+	}
+	if latency < 0 || latency > 30000 {
 		respondError(w, http.StatusBadRequest, "latency_ms must be 0–30000 (0 = inherit global default)")
+		return
+	}
+	if err := validatePublisherList(req.AllowedPublishers); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	stream := &model.Stream{
@@ -107,7 +140,7 @@ func (s *Server) createStream(w http.ResponseWriter, r *http.Request) {
 		MaxSubscribers:    maxSubs,
 		AllowedPublishers: req.AllowedPublishers,
 		Enabled:           enabled,
-		LatencyMS:         req.LatencyMS,
+		LatencyMS:         latency,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
@@ -205,20 +238,32 @@ func (s *Server) updateStream(w http.ResponseWriter, r *http.Request) {
 		}
 		existing.Passphrase = enc
 	}
-	if req.MaxSubscribers >= 0 && req.MaxSubscribers != existing.MaxSubscribers {
-		existing.MaxSubscribers = req.MaxSubscribers
+	// Pointer fields: absent from the body means "leave unchanged", so a
+	// partial update can't silently drop the subscriber cap or latency.
+	if req.MaxSubscribers != nil {
+		if *req.MaxSubscribers < 0 {
+			respondError(w, http.StatusBadRequest, "max_subscribers must be >= 0 (0 = unlimited)")
+			return
+		}
+		existing.MaxSubscribers = *req.MaxSubscribers
 	}
 	if req.AllowedPublishers != nil {
+		if err := validatePublisherList(req.AllowedPublishers); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		existing.AllowedPublishers = req.AllowedPublishers
 	}
 	if req.Enabled != nil {
 		existing.Enabled = *req.Enabled
 	}
-	if req.LatencyMS < 0 || req.LatencyMS > 30000 {
-		respondError(w, http.StatusBadRequest, "latency_ms must be 0–30000 (0 = inherit global default)")
-		return
+	if req.LatencyMS != nil {
+		if *req.LatencyMS < 0 || *req.LatencyMS > 30000 {
+			respondError(w, http.StatusBadRequest, "latency_ms must be 0–30000 (0 = inherit global default)")
+			return
+		}
+		existing.LatencyMS = *req.LatencyMS
 	}
-	existing.LatencyMS = req.LatencyMS
 
 	if err := s.db.Streams.Update(existing); err != nil {
 		respondError(w, http.StatusInternalServerError, "update failed")
